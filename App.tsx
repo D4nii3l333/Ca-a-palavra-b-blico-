@@ -30,7 +30,7 @@ const ACHIEVEMENTS_LIST_DEF: Omit<Achievement, 'unlocked'>[] = [
 type AdContext = 'UNLOCK_BOOK' | 'HINT' | 'INTERSTITIAL';
 
 const App: React.FC = () => {
-  // Start with a loading state to check persistence before showing any screen
+  // Start with a loading state
   const [isLoading, setIsLoading] = useState(true);
   const [screen, setScreen] = useState<ScreenState>(ScreenState.LOGIN);
   
@@ -98,10 +98,11 @@ const App: React.FC = () => {
   // --- INITIALIZATION ---
 
   useEffect(() => {
-    // Check local storage for existing user
+    // Check local storage for existing user directly (Synchronous safety + Timeout for visual)
     const storedData = localStorage.getItem('bible_word_search_save_v1');
     
-    setTimeout(() => {
+    // Artificial delay to ensure fonts/assets might be ready and show splash
+    const timer = setTimeout(() => {
       if (storedData) {
         try {
           const parsed: SaveData = JSON.parse(storedData);
@@ -119,7 +120,7 @@ const App: React.FC = () => {
             logEvent('app_open', { user_type: 'new_or_cleared' });
           }
         } catch (e) {
-          console.error("Save data corrupted");
+          console.error("Save data corrupted", e);
           setScreen(ScreenState.LOGIN);
         }
       } else {
@@ -127,7 +128,9 @@ const App: React.FC = () => {
         logEvent('app_open', { user_type: 'first_time' });
       }
       setIsLoading(false);
-    }, 800);
+    }, 1000);
+
+    return () => clearTimeout(timer);
   }, []);
 
   // Save on significant state changes
@@ -141,7 +144,11 @@ const App: React.FC = () => {
         hintUsageCount: hintUsageTotal,
         levelsCompletedTotal
       };
-      localStorage.setItem('bible_word_search_save_v1', JSON.stringify(saveData));
+      try {
+        localStorage.setItem('bible_word_search_save_v1', JSON.stringify(saveData));
+      } catch (e) {
+        console.error("Error saving data", e);
+      }
     }
   }, [userProfile, unlockedBookIds, completedLevels, unlockedAchievementIds, hintUsageTotal, levelsCompletedTotal]);
 
@@ -194,7 +201,6 @@ const App: React.FC = () => {
         termsAccepted: false
       };
       
-      // Instead of setting UserProfile directly, set PendingUser and open Terms
       setPendingUser(mockUser);
       setIsLoggingIn(false);
       setShowTermsModal(true);
@@ -209,7 +215,6 @@ const App: React.FC = () => {
       termsAccepted: false
     };
     
-    // Instead of setting UserProfile directly, set PendingUser and open Terms
     setPendingUser(guestUser);
     setShowTermsModal(true);
   };
@@ -223,7 +228,6 @@ const App: React.FC = () => {
       setScreen(ScreenState.MENU);
       logEvent('login_success', { method: confirmedUser.isGuest ? 'guest' : 'google', terms_accepted: true });
     } else {
-      // Just viewing terms from menu
       setShowTermsModal(false);
     }
   };
@@ -231,12 +235,13 @@ const App: React.FC = () => {
   const handleTermsRejection = () => {
     setPendingUser(null);
     setShowTermsModal(false);
-    // Stay on Login screen
     logEvent('login_terms_rejected');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('bible_word_search_save_v1');
+    try {
+      localStorage.removeItem('bible_word_search_save_v1');
+    } catch (e) { console.error(e); }
     setUserProfile(null);
     setScreen(ScreenState.LOGIN);
     setCompletedLevels([]);
@@ -253,11 +258,9 @@ const App: React.FC = () => {
         name: isUpgrade ? userProfile.name : 'Novo Usuário Google', 
         isGuest: false,
         avatarId: isUpgrade ? userProfile.avatarId : Math.floor(Math.random() * AVATARS.length) + 1,
-        termsAccepted: true // If upgrading, assume terms were accepted previously or re-prompt if strictly needed
+        termsAccepted: true 
       };
       
-      // If upgrading from guest who already accepted, we might skip. 
-      // But for simplicity and safety, let's treat new accounts as needing acceptance if the prompt implies "first time on THAT account"
       if (isUpgrade && userProfile?.termsAccepted) {
          setUserProfile(newUser);
          setIsLoggingIn(false);
@@ -300,7 +303,6 @@ const App: React.FC = () => {
         try {
           if (e.target?.result && typeof e.target.result === 'string') {
             const parsed: SaveData = JSON.parse(e.target.result);
-            // Basic validation
             if (parsed.userProfile && Array.isArray(parsed.completedLevels)) {
               setUserProfile(parsed.userProfile);
               setUnlockedBookIds(parsed.unlockedBookIds);
@@ -323,7 +325,6 @@ const App: React.FC = () => {
   };
 
   const handleFeedbackSubmit = () => {
-    // Simulate API call
     if (!feedbackText.trim()) return;
     setTimeout(() => {
       setShowFeedbackModal(false);
@@ -397,7 +398,6 @@ const App: React.FC = () => {
     logEvent('ad_completed', { context: adContext });
   };
 
-  // Called when clicking a level in Level Select
   const handleLevelPreSelect = (level: LevelData, index: number) => {
     setPendingLevel({ level, index });
   };
@@ -414,7 +414,6 @@ const App: React.FC = () => {
       setCurrentLevelIndex(pendingLevel.index);
       setGameMode(mode);
       
-      // Reset Accessibility Defaults
       setViewState({ x: 0, y: 0, scale: mode === GameMode.ACCESSIBLE ? 1.0 : 1.0 });
       setInteractionMode('SELECT');
       
@@ -422,7 +421,6 @@ const App: React.FC = () => {
       setScreen(ScreenState.GAME);
       logEvent('level_start', { level_id: pendingLevel.level.id, mode });
 
-      // Check Tutorial
       const tutorialSeen = localStorage.getItem('tutorial_seen');
       if (!tutorialSeen) {
         setShowTutorial(true);
@@ -485,7 +483,6 @@ const App: React.FC = () => {
     if (solution) {
       setFoundWordIndices(prev => [...prev, nextIndex]);
       setFoundCoordinates(prev => [...prev, solution]);
-      // Only increment count if the hint is successfully executed/delivered
       setHintUsageCount(prev => prev + 1);
       setHintUsageTotal(prev => prev + 1);
       logEvent('hint_used', { level_id: currentLevel.id });
@@ -545,7 +542,7 @@ const App: React.FC = () => {
     }
   };
 
-  // --- GESTURE HANDLING FOR ACCESSIBLE MODE (PAN/ZOOM) ---
+  // --- GESTURE HANDLING ---
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (gameMode !== GameMode.ACCESSIBLE || interactionMode !== 'PAN') return;
@@ -553,12 +550,9 @@ const App: React.FC = () => {
     e.currentTarget.setPointerCapture(e.pointerId);
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    // If 1 pointer, setup for PAN
     if (pointersRef.current.size === 1) {
       lastPanPointRef.current = { x: e.clientX, y: e.clientY };
-    }
-    // If 2 pointers, setup for PINCH
-    else if (pointersRef.current.size === 2) {
+    } else if (pointersRef.current.size === 2) {
       const points = Array.from(pointersRef.current.values()) as { x: number; y: number }[];
       const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
       prevPinchDistRef.current = dist;
@@ -569,36 +563,22 @@ const App: React.FC = () => {
     if (gameMode !== GameMode.ACCESSIBLE || interactionMode !== 'PAN') return;
     if (!pointersRef.current.has(e.pointerId)) return;
 
-    // Update current pointer position
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
 
-    // Handle Pan (1 Finger)
     if (pointersRef.current.size === 1 && lastPanPointRef.current) {
       const dx = e.clientX - lastPanPointRef.current.x;
       const dy = e.clientY - lastPanPointRef.current.y;
       
-      setViewState(prev => ({
-        ...prev,
-        x: prev.x + dx,
-        y: prev.y + dy
-      }));
-      
+      setViewState(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
       lastPanPointRef.current = { x: e.clientX, y: e.clientY };
-    }
-    // Handle Pinch Zoom (2 Fingers)
-    else if (pointersRef.current.size === 2) {
+    } else if (pointersRef.current.size === 2) {
       const points = Array.from(pointersRef.current.values()) as { x: number; y: number }[];
       const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
 
       if (prevPinchDistRef.current !== null) {
         const delta = dist - prevPinchDistRef.current;
-        // Sensitivity factor
         const scaleDelta = delta * 0.005; 
-        
-        setViewState(prev => ({
-          ...prev,
-          scale: Math.max(0.5, Math.min(prev.scale + scaleDelta, 3.0)) // Limit scale between 0.5x and 3x
-        }));
+        setViewState(prev => ({ ...prev, scale: Math.max(0.5, Math.min(prev.scale + scaleDelta, 3.0)) }));
       }
       prevPinchDistRef.current = dist;
     }
@@ -610,12 +590,10 @@ const App: React.FC = () => {
     pointersRef.current.delete(e.pointerId);
     e.currentTarget.releasePointerCapture(e.pointerId);
 
-    // Reset interaction states if pointers drop
     if (pointersRef.current.size < 2) {
       prevPinchDistRef.current = null;
     }
     if (pointersRef.current.size === 1) {
-      // If we dropped from 2 to 1, reset the pan reference to avoid jumps
       const remainingPoint = pointersRef.current.values().next().value;
       lastPanPointRef.current = remainingPoint;
     } else {
@@ -627,7 +605,6 @@ const App: React.FC = () => {
 
   // --- RENDERERS ---
 
-  // ... (Avatars and VerseText Renders remain the same)
   const renderAvatar = (id: number, sizeClass: string = "w-10 h-10", iconSize: number = 20) => {
     const avatar = AVATARS.find(a => a.id === id) || AVATARS[0];
     const IconComponent = avatar.icon;
@@ -639,11 +616,9 @@ const App: React.FC = () => {
   };
 
   const renderVerseText = (text: string, words: WordConfig[]) => {
-    // Create a regex to match any of the words (case insensitive)
     const sortedWords = [...words].sort((a, b) => b.display.length - a.display.length); 
     const pattern = `(${sortedWords.map(w => w.display.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`;
     const regex = new RegExp(pattern, 'gi');
-    
     const parts = text.split(regex);
     
     return (
@@ -721,7 +696,7 @@ const App: React.FC = () => {
                onClick={() => {
                  setShowAdModal(false);
                  setAdTargetBook(null);
-                 setPendingAdAction(null); // Explicitly clear pending action on cancel
+                 setPendingAdAction(null); 
                  logEvent('ad_cancelled', { context: adContext });
                }}
                className="absolute top-2 right-2 text-wood-dark hover:bg-wood/10 p-2 rounded-full transition"
@@ -844,11 +819,66 @@ const App: React.FC = () => {
     </div>
   );
 
+  const renderMenu = () => (
+    <div className="flex flex-col items-center justify-center h-full space-y-8 animate-fade-in px-6 relative">
+      <button 
+        onClick={() => {
+          startEditingProfile();
+          setIsEditingProfile(false); 
+          setScreen(ScreenState.PROFILE);
+        }}
+        className="absolute top-4 right-4 flex items-center space-x-2 bg-parchment-100/50 hover:bg-parchment-100 px-3 py-1.5 rounded-full shadow-sm transition-all border border-wood/10"
+      >
+        {userProfile && renderAvatar(userProfile.avatarId, "w-6 h-6", 14)}
+        <span className="text-xs font-bold text-wood-darker truncate max-w-[100px]">{userProfile?.name || 'Visitante'}</span>
+      </button>
+
+      <div className="text-center space-y-2">
+        <div className="relative inline-block">
+          <BookOpen className="w-16 h-16 text-wood mx-auto mb-4" />
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-yellow-400/20 blur-xl rounded-full -z-10"></div>
+        </div>
+        <h1 className="text-4xl md:text-5xl font-display text-wood-darker drop-shadow-sm">
+          CAÇA-PALAVRA<br/>BÍBLICO
+        </h1>
+      </div>
+
+      <div className="w-full max-w-xs space-y-4">
+        <button 
+          onClick={() => setScreen(ScreenState.BOOKS)}
+          className="w-full bg-nature hover:bg-nature-dark text-white font-serif font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 flex items-center justify-center text-xl border-b-4 border-nature-dark"
+        >
+          <Play className="mr-3 w-6 h-6" /> JOGAR
+        </button>
+
+        <button disabled className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-serif font-bold py-3 px-6 rounded-xl shadow opacity-80 cursor-not-allowed flex items-center justify-center border-b-4 border-wood-dark">
+          <Calendar className="mr-3 w-5 h-5" /> DIÁRIOS
+        </button>
+
+        <button disabled className="w-full bg-blue-600 hover:bg-blue-700 text-white font-serif font-bold py-3 px-6 rounded-xl shadow opacity-80 cursor-not-allowed flex items-center justify-center border-b-4 border-blue-800">
+          <Award className="mr-3 w-5 h-5" /> DESAFIOS BÍBLICOS
+        </button>
+      </div>
+      
+      <div className="mt-auto w-full flex justify-between items-end pb-4 px-2">
+         <button 
+           onClick={() => setScreen(ScreenState.ABOUT)} 
+           className="text-wood-dark opacity-60 hover:opacity-100 hover:underline text-xs flex items-center gap-1"
+         >
+           <Info size={14} /> Sobre
+         </button>
+         <div className="text-wood/60 text-sm italic text-center">
+            <p className="mb-2">"Lâmpada para os meus pés..."</p>
+            <p className="text-[10px] uppercase tracking-wider opacity-70">Almeida Corrigida Fiel (ACF)</p>
+         </div>
+         <div className="w-10"></div>{/* Spacer to center the quote somewhat */}
+      </div>
+    </div>
+  );
+
   const renderTermsModal = () => {
     if (!showTermsModal) return null;
     
-    // If pendingUser is set, it means we are in the login flow.
-    // If not, we are just viewing from the "About" page.
     const isLoginFlow = !!pendingUser;
 
     return (
@@ -910,66 +940,6 @@ const App: React.FC = () => {
       </div>
     );
   };
-
-  // ... (Keep existing renderMenu, renderProfile, renderAbout, renderBookSelection, renderLevelSelect, renderGame, renderModeSelectionModal, renderFeedbackModal, renderAchievementToast, renderAdModal)
-
-  // ... [Inside renderMenu function (unchanged except for structure context)]
-  const renderMenu = () => (
-    <div className="flex flex-col items-center justify-center h-full space-y-8 animate-fade-in px-6 relative">
-      <button 
-        onClick={() => {
-          startEditingProfile();
-          setIsEditingProfile(false); 
-          setScreen(ScreenState.PROFILE);
-        }}
-        className="absolute top-4 right-4 flex items-center space-x-2 bg-parchment-100/50 hover:bg-parchment-100 px-3 py-1.5 rounded-full shadow-sm transition-all border border-wood/10"
-      >
-        {userProfile && renderAvatar(userProfile.avatarId, "w-6 h-6", 14)}
-        <span className="text-xs font-bold text-wood-darker truncate max-w-[100px]">{userProfile?.name || 'Visitante'}</span>
-      </button>
-
-      <div className="text-center space-y-2">
-        <div className="relative inline-block">
-          <BookOpen className="w-16 h-16 text-wood mx-auto mb-4" />
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-yellow-400/20 blur-xl rounded-full -z-10"></div>
-        </div>
-        <h1 className="text-4xl md:text-5xl font-display text-wood-darker drop-shadow-sm">
-          CAÇA-PALAVRA<br/>BÍBLICO
-        </h1>
-      </div>
-
-      <div className="w-full max-w-xs space-y-4">
-        <button 
-          onClick={() => setScreen(ScreenState.BOOKS)}
-          className="w-full bg-nature hover:bg-nature-dark text-white font-serif font-bold py-4 px-6 rounded-xl shadow-lg transform transition active:scale-95 flex items-center justify-center text-xl border-b-4 border-nature-dark"
-        >
-          <Play className="mr-3 w-6 h-6" /> JOGAR
-        </button>
-
-        <button disabled className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-serif font-bold py-3 px-6 rounded-xl shadow opacity-80 cursor-not-allowed flex items-center justify-center border-b-4 border-wood-dark">
-          <Calendar className="mr-3 w-5 h-5" /> DIÁRIOS
-        </button>
-
-        <button disabled className="w-full bg-blue-600 hover:bg-blue-700 text-white font-serif font-bold py-3 px-6 rounded-xl shadow opacity-80 cursor-not-allowed flex items-center justify-center border-b-4 border-blue-800">
-          <Award className="mr-3 w-5 h-5" /> DESAFIOS BÍBLICOS
-        </button>
-      </div>
-      
-      <div className="mt-auto w-full flex justify-between items-end pb-4 px-2">
-         <button 
-           onClick={() => setScreen(ScreenState.ABOUT)} 
-           className="text-wood-dark opacity-60 hover:opacity-100 hover:underline text-xs flex items-center gap-1"
-         >
-           <Info size={14} /> Sobre
-         </button>
-         <div className="text-wood/60 text-sm italic text-center">
-            <p className="mb-2">"Lâmpada para os meus pés..."</p>
-            <p className="text-[10px] uppercase tracking-wider opacity-70">Almeida Corrigida Fiel (ACF)</p>
-         </div>
-         <div className="w-10"></div>{/* Spacer to center the quote somewhat */}
-      </div>
-    </div>
-  );
 
   const renderProfile = () => (
     <div className="flex flex-col h-full animate-fade-in bg-parchment-200">
