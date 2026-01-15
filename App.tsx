@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, UserProfile, GameMode } from './types';
 import { BOOKS } from './constants';
 import { generateGrid, normalizeWord } from './utils/gameLogic';
 import { WordGrid } from './components/WordGrid';
-import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2 } from 'lucide-react';
+import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee } from 'lucide-react';
 
 // --- AVATAR CONFIGURATION ---
 const AVATARS = [
@@ -16,6 +16,8 @@ const AVATARS = [
   { id: 7, color: 'bg-teal-600', icon: User },
   { id: 8, color: 'bg-pink-600', icon: Star },
 ];
+
+type AdContext = 'UNLOCK_BOOK' | 'HINT' | 'INTERSTITIAL';
 
 const App: React.FC = () => {
   // Start with a loading state to check persistence before showing any screen
@@ -30,10 +32,16 @@ const App: React.FC = () => {
   const [currentLevelIndex, setCurrentLevelIndex] = useState<number>(0);
   const [gameMode, setGameMode] = useState<GameMode>(GameMode.STANDARD);
   
-  // Accessibility State
-  const [zoomLevel, setZoomLevel] = useState(1);
-  const [interactionMode, setInteractionMode] = useState<'SELECT' | 'PAN'>('SELECT'); // For accessible mode touch handling
+  // Accessibility & Viewport State
+  const [interactionMode, setInteractionMode] = useState<'SELECT' | 'PAN'>('SELECT');
+  // ViewState: { x, y, scale } for infinite canvas manipulation
+  const [viewState, setViewState] = useState({ x: 0, y: 0, scale: 1.0 });
   
+  // Gesture Refs
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  const prevPinchDistRef = useRef<number | null>(null);
+  const lastPanPointRef = useRef<{ x: number; y: number } | null>(null);
+
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
 
@@ -43,14 +51,20 @@ const App: React.FC = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
   // Persistence / Progress State
-  const [unlockedBookIds, setUnlockedBookIds] = useState<string[]>(['2john']); // Default unlocked
+  const [unlockedBookIds, setUnlockedBookIds] = useState<string[]>(['2john', 'matthew', 'john', 'genesis']); // Default unlocked
   const [completedLevels, setCompletedLevels] = useState<string[]>([]); // List of level IDs completed
 
   // Ad Simulation State
   const [showAdModal, setShowAdModal] = useState(false);
-  const [adTargetBook, setAdTargetBook] = useState<BookData | null>(null);
+  const [adContext, setAdContext] = useState<AdContext>('UNLOCK_BOOK');
+  const [pendingAdAction, setPendingAdAction] = useState<(() => void) | null>(null);
+  const [adTargetBook, setAdTargetBook] = useState<BookData | null>(null); // Only for UNLOCK_BOOK context
   const [adTimer, setAdTimer] = useState(60);
   const [isAdPlaying, setIsAdPlaying] = useState(false);
+
+  // Ad Frequency Counters (Session based)
+  const [hintUsageCount, setHintUsageCount] = useState(0);
+  const [levelsCompletedSessionCount, setLevelsCompletedSessionCount] = useState(0);
 
   // Game State
   const [gridState, setGridState] = useState<GridState | null>(null);
@@ -149,12 +163,18 @@ const App: React.FC = () => {
   const handleBookClick = (book: BookData) => {
     if (book.levels.length === 0) return;
 
-    if (unlockedBookIds.includes(book.id)) {
+    if (unlockedBookIds.includes(book.id) || !book.isLocked) {
       setSelectedBook(book);
       setScreen(ScreenState.LEVEL_SELECT);
     } else {
       setAdTargetBook(book);
-      setAdTimer(60);
+      setAdContext('UNLOCK_BOOK');
+      setPendingAdAction(() => () => {
+        setUnlockedBookIds(prev => [...prev, book.id]);
+        setSelectedBook(book);
+        setScreen(ScreenState.LEVEL_SELECT);
+      });
+      setAdTimer(30); // Shorter for demo
       setIsAdPlaying(false);
       setShowAdModal(true);
     }
@@ -175,14 +195,13 @@ const App: React.FC = () => {
   };
 
   const completeAd = () => {
-    if (adTargetBook) {
-      setUnlockedBookIds(prev => [...prev, adTargetBook.id]);
-      setSelectedBook(adTargetBook);
-      setScreen(ScreenState.LEVEL_SELECT);
-    }
     setShowAdModal(false);
-    setAdTargetBook(null);
     setIsAdPlaying(false);
+    setAdTargetBook(null);
+    if (pendingAdAction) {
+      pendingAdAction();
+      setPendingAdAction(null);
+    }
   };
 
   // Called when clicking a level in Level Select
@@ -204,7 +223,7 @@ const App: React.FC = () => {
       setGameMode(mode);
       
       // Reset Accessibility Defaults
-      setZoomLevel(mode === GameMode.ACCESSIBLE ? 1.0 : 1);
+      setViewState({ x: 0, y: 0, scale: mode === GameMode.ACCESSIBLE ? 1.0 : 1.0 });
       setInteractionMode('SELECT');
       
       setPendingLevel(null);
@@ -220,6 +239,8 @@ const App: React.FC = () => {
       if (!completedLevels.includes(currentLevel.id)) {
         setCompletedLevels(prev => [...prev, currentLevel.id]);
       }
+      // Increment session counter for ads
+      setLevelsCompletedSessionCount(prev => prev + 1);
     }
   };
 
@@ -249,7 +270,7 @@ const App: React.FC = () => {
     }
   };
 
-  const handleHint = () => {
+  const executeHint = () => {
     if (!currentLevel || !gridState) return;
     const availableIndices = currentLevel.words
       .map((_, idx) => idx)
@@ -262,25 +283,137 @@ const App: React.FC = () => {
     if (solution) {
       setFoundWordIndices(prev => [...prev, nextIndex]);
       setFoundCoordinates(prev => [...prev, solution]);
+      // Only increment count if the hint is successfully executed/delivered
+      setHintUsageCount(prev => prev + 1);
+    }
+  };
+
+  const handleHint = () => {
+    if ((hintUsageCount + 1) % 2 === 0) {
+      setAdContext('HINT');
+      setPendingAdAction(() => () => {
+        executeHint();
+      });
+      setAdTimer(15);
+      setIsAdPlaying(false);
+      setShowAdModal(true);
+    } else {
+      executeHint();
     }
   };
 
   const nextLevel = () => {
-    if (selectedBook && selectedBook.levels[currentLevelIndex + 1]) {
-       const nextLvl = selectedBook.levels[currentLevelIndex + 1];
-       const nextIndex = currentLevelIndex + 1;
-       
-       try {
-        const newGrid = generateGrid(nextLvl.words);
-        setGridState(newGrid);
-        setFoundWordIndices([]);
-        setFoundCoordinates([]);
-        setCurrentLevel(nextLvl);
-        setCurrentLevelIndex(nextIndex);
-        // Keep existing GameMode
-      } catch (e) {
-        console.error("Failed to start next level", e);
+    const countToCheck = levelsCompletedSessionCount; 
+    const shouldShowAd = countToCheck > 0 && (countToCheck % 3 === 0 || countToCheck % 5 === 0);
+
+    const proceedToNextLevel = () => {
+      if (selectedBook && selectedBook.levels[currentLevelIndex + 1]) {
+         const nextLvl = selectedBook.levels[currentLevelIndex + 1];
+         const nextIndex = currentLevelIndex + 1;
+         
+         try {
+          const newGrid = generateGrid(nextLvl.words);
+          setGridState(newGrid);
+          setFoundWordIndices([]);
+          setFoundCoordinates([]);
+          setCurrentLevel(nextLvl);
+          setCurrentLevelIndex(nextIndex);
+          // Reset view
+          setViewState({ x: 0, y: 0, scale: gameMode === GameMode.ACCESSIBLE ? 1.0 : 1.0 });
+        } catch (e) {
+          console.error("Failed to start next level", e);
+        }
       }
+    };
+
+    if (shouldShowAd) {
+      setAdContext('INTERSTITIAL');
+      setPendingAdAction(() => () => {
+        proceedToNextLevel();
+      });
+      setAdTimer(30);
+      setIsAdPlaying(false);
+      setShowAdModal(true);
+    } else {
+      proceedToNextLevel();
+    }
+  };
+
+  // --- GESTURE HANDLING FOR ACCESSIBLE MODE (PAN/ZOOM) ---
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (gameMode !== GameMode.ACCESSIBLE || interactionMode !== 'PAN') return;
+    
+    e.currentTarget.setPointerCapture(e.pointerId);
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // If 1 pointer, setup for PAN
+    if (pointersRef.current.size === 1) {
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
+    }
+    // If 2 pointers, setup for PINCH
+    else if (pointersRef.current.size === 2) {
+      const points = Array.from(pointersRef.current.values()) as { x: number; y: number }[];
+      const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+      prevPinchDistRef.current = dist;
+    }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (gameMode !== GameMode.ACCESSIBLE || interactionMode !== 'PAN') return;
+    if (!pointersRef.current.has(e.pointerId)) return;
+
+    // Update current pointer position
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    // Handle Pan (1 Finger)
+    if (pointersRef.current.size === 1 && lastPanPointRef.current) {
+      const dx = e.clientX - lastPanPointRef.current.x;
+      const dy = e.clientY - lastPanPointRef.current.y;
+      
+      setViewState(prev => ({
+        ...prev,
+        x: prev.x + dx,
+        y: prev.y + dy
+      }));
+      
+      lastPanPointRef.current = { x: e.clientX, y: e.clientY };
+    }
+    // Handle Pinch Zoom (2 Fingers)
+    else if (pointersRef.current.size === 2) {
+      const points = Array.from(pointersRef.current.values()) as { x: number; y: number }[];
+      const dist = Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+
+      if (prevPinchDistRef.current !== null) {
+        const delta = dist - prevPinchDistRef.current;
+        // Sensitivity factor
+        const scaleDelta = delta * 0.005; 
+        
+        setViewState(prev => ({
+          ...prev,
+          scale: Math.max(0.5, Math.min(prev.scale + scaleDelta, 3.0)) // Limit scale between 0.5x and 3x
+        }));
+      }
+      prevPinchDistRef.current = dist;
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (gameMode !== GameMode.ACCESSIBLE || interactionMode !== 'PAN') return;
+    
+    pointersRef.current.delete(e.pointerId);
+    e.currentTarget.releasePointerCapture(e.pointerId);
+
+    // Reset interaction states if pointers drop
+    if (pointersRef.current.size < 2) {
+      prevPinchDistRef.current = null;
+    }
+    if (pointersRef.current.size === 1) {
+      // If we dropped from 2 to 1, reset the pan reference to avoid jumps
+      const remainingPoint = pointersRef.current.values().next().value;
+      lastPanPointRef.current = remainingPoint;
+    } else {
+      lastPanPointRef.current = null;
     }
   };
 
@@ -338,7 +471,25 @@ const App: React.FC = () => {
   };
 
   const renderAdModal = () => {
-    if (!showAdModal || !adTargetBook) return null;
+    if (!showAdModal) return null;
+
+    let title = "";
+    let message = "";
+    let icon = null;
+
+    if (adContext === 'UNLOCK_BOOK' && adTargetBook) {
+      title = "Desbloquear Livro";
+      message = `O livro ${adTargetBook.name} está bloqueado. Assista a um vídeo curto para liberar todas as fases.`;
+      icon = <BookOpen className="w-10 h-10 text-wood" />;
+    } else if (adContext === 'HINT') {
+      title = "Dica Bloqueada";
+      message = "Assista a um vídeo curto para revelar uma palavra escondida no versículo.";
+      icon = <Lightbulb className="w-10 h-10 text-yellow-500" />;
+    } else if (adContext === 'INTERSTITIAL') {
+      title = "Intervalo";
+      message = "Assista a um breve anúncio para continuar sua jornada de aprendizado.";
+      icon = <Coffee className="w-10 h-10 text-wood-dark" />;
+    }
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
@@ -348,6 +499,7 @@ const App: React.FC = () => {
                onClick={() => {
                  setShowAdModal(false);
                  setAdTargetBook(null);
+                 setPendingAdAction(null); // Explicitly clear pending action on cancel
                }}
                className="absolute top-2 right-2 text-wood-dark hover:bg-wood/10 p-2 rounded-full transition"
              >
@@ -356,25 +508,27 @@ const App: React.FC = () => {
            )}
 
            <div className="bg-wood p-4 text-center">
-             <h3 className="text-xl font-display font-bold text-parchment-100">Desbloquear Livro</h3>
+             <h3 className="text-xl font-display font-bold text-parchment-100">{title}</h3>
            </div>
            
            <div className="p-6 flex flex-col items-center text-center space-y-6">
               <div className="relative">
                  <div className="w-20 h-20 bg-wood/10 rounded-full flex items-center justify-center">
-                    <BookOpen className="w-10 h-10 text-wood" />
+                    {icon}
                  </div>
-                 <div className="absolute -bottom-2 -right-2 bg-nature text-white p-2 rounded-full shadow border-2 border-parchment-100">
-                    <Unlock className="w-4 h-4" />
-                 </div>
+                 {adContext === 'UNLOCK_BOOK' && (
+                   <div className="absolute -bottom-2 -right-2 bg-nature text-white p-2 rounded-full shadow border-2 border-parchment-100">
+                      <Unlock className="w-4 h-4" />
+                   </div>
+                 )}
               </div>
               
               <div>
-                <p className="text-wood-dark font-serif text-lg mb-2">
-                   O livro <span className="font-bold text-wood-darker">{adTargetBook.name}</span> está bloqueado.
+                <p className="text-wood-dark font-serif text-lg mb-2 leading-tight">
+                   {message}
                 </p>
-                <p className="text-sm text-wood opacity-80 leading-snug">
-                   Assista a um vídeo curto para liberar todas as fases deste livro gratuitamente.
+                <p className="text-xs text-wood opacity-60">
+                   Ajude-nos a manter o jogo gratuito.
                 </p>
               </div>
 
@@ -403,6 +557,7 @@ const App: React.FC = () => {
     );
   };
 
+  // ... (Keep existing renderLogin, renderMenu, renderProfile, renderBookSelection, renderLevelSelect logic)
   const renderLogin = () => (
     <div className="flex flex-col items-center justify-center h-full px-8 animate-fade-in relative">
        <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/aged-paper.png')] pointer-events-none"></div>
@@ -646,7 +801,7 @@ const App: React.FC = () => {
     const inDevNT = inDevBooks.filter(b => b.testament === 'New');
 
     const renderBookButton = (book: BookData, isDev: boolean) => {
-      const isUnlocked = unlockedBookIds.includes(book.id);
+      const isUnlocked = unlockedBookIds.includes(book.id) || !book.isLocked;
       const bookLevelIds = book.levels.map(l => l.id);
       const completedCount = bookLevelIds.filter(id => completedLevels.includes(id)).length;
       const isDisabled = isDev;
@@ -783,7 +938,14 @@ const App: React.FC = () => {
 
   const renderLevelSelect = () => {
     if (!selectedBook) return null;
-    const levelsArray = Array.from({ length: selectedBook.totalVerses }, (_, i) => i + 1);
+    
+    // Helper to extract chapter number from reference string (e.g. "Mateus 2:1" -> "2")
+    const getChapterFromRef = (ref: string) => {
+       const match = ref.match(/ (\d+):/);
+       return match ? match[1] : null;
+    };
+
+    let lastChapter = null;
 
     return (
       <div className="flex flex-col h-full animate-fade-in bg-parchment-200">
@@ -799,46 +961,63 @@ const App: React.FC = () => {
         </div>
         <div className="flex-1 overflow-y-auto p-6">
           <div className="grid grid-cols-4 md:grid-cols-6 gap-4">
-            {levelsArray.map((levelNum, index) => {
-              const levelData = selectedBook.levels[index];
-              const isLocked = !levelData;
-              const isCompleted = levelData && completedLevels.includes(levelData.id);
+            {selectedBook.levels.map((levelData, index) => {
+              const currentChapter = getChapterFromRef(levelData.reference);
+              const showChapterHeader = currentChapter && currentChapter !== lastChapter;
+              if (currentChapter) lastChapter = currentChapter;
+              
+              const levelNum = index + 1;
+              const isCompleted = completedLevels.includes(levelData.id);
 
               return (
-                <button
-                  key={levelNum}
-                  disabled={isLocked}
-                  onClick={() => levelData && handleLevelPreSelect(levelData, index)}
-                  className={`
-                    relative aspect-square rounded-xl shadow-sm flex flex-col items-center justify-center
-                    border-b-4 transition-all duration-200
-                    ${isLocked 
-                      ? 'bg-wood/20 border-wood/30 text-wood/40 cursor-not-allowed' 
-                      : isCompleted
+                <React.Fragment key={levelData.id}>
+                  {showChapterHeader && (
+                    <div className="col-span-4 md:col-span-6 mt-4 mb-2 first:mt-0">
+                      <div className="flex items-center">
+                        <div className="h-px bg-wood/20 flex-1"></div>
+                        <span className="px-3 font-display font-bold text-wood-darker text-lg uppercase tracking-widest">
+                          Capítulo {currentChapter}
+                        </span>
+                        <div className="h-px bg-wood/20 flex-1"></div>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => handleLevelPreSelect(levelData, index)}
+                    className={`
+                      relative aspect-square rounded-xl shadow-sm flex flex-col items-center justify-center
+                      border-b-4 transition-all duration-200
+                      ${isCompleted
                         ? 'bg-nature text-white border-nature-dark active:scale-95 shadow-md'
                         : 'bg-wood text-parchment-100 border-wood-dark hover:bg-wood-light active:scale-95 shadow-md'}
-                  `}
-                >
-                  <span className="text-2xl font-display font-bold">{levelNum}</span>
-                  {isCompleted && (
-                    <div className="absolute -bottom-2">
-                       <Star className="w-5 h-5 fill-yellow-400 text-yellow-600 drop-shadow-sm" />
-                    </div>
-                  )}
-                  {isLocked && (
-                    <div className="absolute top-1 right-1 opacity-50">
-                      <Lock className="w-3 h-3" />
-                    </div>
-                  )}
-                </button>
+                    `}
+                  >
+                    <span className="text-2xl font-display font-bold">{levelNum}</span>
+                    {isCompleted && (
+                      <div className="absolute -bottom-2">
+                         <Star className="w-5 h-5 fill-yellow-400 text-yellow-600 drop-shadow-sm" />
+                      </div>
+                    )}
+                  </button>
+                </React.Fragment>
               );
             })}
           </div>
+          
           {selectedBook.levels.length === 0 && (
              <div className="mt-10 text-center p-8 border-2 border-dashed border-wood/30 rounded-lg text-wood">
                <p className="font-serif italic">Fases em desenvolvimento.</p>
              </div>
           )}
+          
+          {selectedBook.levels.length > 0 && selectedBook.levels.length < selectedBook.totalVerses && (
+             <div className="mt-8 text-center">
+                <div className="inline-block px-4 py-2 bg-wood/10 rounded-full text-wood-dark text-sm font-bold opacity-70">
+                   Mais capítulos em breve...
+                </div>
+             </div>
+          )}
+
           <div className="mt-8 text-center opacity-50 text-xs font-serif pb-4 text-wood-dark">
              Texto Bíblico: Almeida Corrigida Fiel (ACF)
           </div>
@@ -887,43 +1066,28 @@ const App: React.FC = () => {
           <div className="bg-[#e6dcc0] border-b border-[#d1c4a0] p-3 flex items-center justify-between gap-4 shrink-0 shadow-inner z-10">
              
              {/* Interaction Toggle - Styled like segmented control */}
-             <div className="flex bg-[#d1c4a0] p-1 rounded-lg shadow-inner">
+             <div className="flex bg-[#d1c4a0] p-1 rounded-lg shadow-inner w-full">
                 <button 
                   onClick={() => setInteractionMode('SELECT')}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${interactionMode === 'SELECT' ? 'bg-wood-darker text-parchment-100 shadow-md transform scale-105' : 'text-wood-darker hover:bg-wood/10'}`}
+                  className={`flex-1 flex justify-center items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${interactionMode === 'SELECT' ? 'bg-wood-darker text-parchment-100 shadow-md transform scale-105' : 'text-wood-darker hover:bg-wood/10'}`}
                 >
                   <MousePointer2 size={18} /> Selecionar
                 </button>
                 <button 
                    onClick={() => setInteractionMode('PAN')}
-                   className={`flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${interactionMode === 'PAN' ? 'bg-wood-darker text-parchment-100 shadow-md transform scale-105' : 'text-wood-darker hover:bg-wood/10'}`}
+                   className={`flex-1 flex justify-center items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-all ${interactionMode === 'PAN' ? 'bg-wood-darker text-parchment-100 shadow-md transform scale-105' : 'text-wood-darker hover:bg-wood/10'}`}
                 >
-                  <Hand size={18} /> Mover
+                  <Hand size={18} /> Mover / Zoom
                 </button>
-             </div>
-
-             {/* Zoom Controls - Styled */}
-             <div className="flex items-center gap-3 bg-parchment-100 px-3 py-1.5 rounded-lg border border-wood/20 shadow-sm">
-                <Minimize2 size={16} className="text-wood-dark" />
-                <input 
-                  type="range" 
-                  min="0.8" 
-                  max="1.8" 
-                  step="0.1"
-                  value={zoomLevel} 
-                  onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
-                  className="w-24 h-2 bg-wood/30 rounded-lg appearance-none cursor-pointer accent-wood-darker"
-                />
-                <Maximize2 size={16} className="text-wood-dark" />
              </div>
           </div>
         )}
 
         {/* Scrollable Content Area */}
-        <div className={`flex-1 flex flex-col overflow-y-auto ${isAccessible ? 'bg-[#faf6e6]' : ''}`}>
+        <div className={`flex-1 flex flex-col overflow-hidden ${isAccessible ? 'bg-[#faf6e6]' : 'overflow-y-auto'}`}>
           
           {/* Verse Text Area */}
-          <div className={`p-6 border-b shadow-sm shrink-0 transition-colors ${isAccessible ? 'bg-[#faf6e6] border-[#e6dcc0]' : 'bg-parchment-100 border-wood/10'}`}>
+          <div className={`p-6 border-b shadow-sm shrink-0 transition-colors z-20 relative ${isAccessible ? 'bg-[#faf6e6] border-[#e6dcc0]' : 'bg-parchment-100 border-wood/10'}`}>
              <div className={`
                leading-relaxed text-center transition-all duration-300
                ${isAccessible ? 'text-2xl font-serif text-[#2a1a10] font-medium' : 'font-serif text-lg text-wood-darker'}
@@ -936,7 +1100,7 @@ const App: React.FC = () => {
           </div>
 
           {/* Word Bank */}
-          <div className={`px-4 py-3 border-b shrink-0 ${isAccessible ? 'bg-[#f0e6cf] border-[#e6dcc0]' : 'bg-parchment-300 border-wood/20'}`}>
+          <div className={`px-4 py-3 border-b shrink-0 z-20 relative ${isAccessible ? 'bg-[#f0e6cf] border-[#e6dcc0]' : 'bg-parchment-300 border-wood/20'}`}>
             <div className="flex flex-wrap justify-center gap-3">
               {currentLevel.words.map((wordConfig, idx) => {
                 const isFound = foundWordIndices.includes(idx);
@@ -970,14 +1134,25 @@ const App: React.FC = () => {
           </div>
 
           {/* Grid Container */}
-          <div className={`flex-1 flex flex-col items-center justify-start p-6 relative min-h-[400px] overflow-auto`}>
+          <div 
+            className={`flex-1 relative overflow-hidden flex items-center justify-center bg-transparent`}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerLeave={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            style={{ touchAction: 'none' }} // Crucial for gesture handling
+          >
             {!isAccessible && (
               <div className="absolute inset-0 opacity-5 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/aged-paper.png')]"></div>
             )}
             
             <div 
-              className={`z-10 mb-12 transition-transform duration-200 origin-top ${isAccessible ? 'p-4' : 'w-full max-w-md aspect-square'}`}
-              style={isAccessible ? { transform: `scale(${zoomLevel})` } : {}}
+              className={`transition-transform duration-75 ease-linear origin-center ${!isAccessible ? 'p-6 w-full max-w-md aspect-square' : ''}`}
+              style={isAccessible ? { 
+                transform: `translate(${viewState.x}px, ${viewState.y}px) scale(${viewState.scale})`,
+                cursor: interactionMode === 'PAN' ? 'grab' : 'default'
+              } : {}}
             >
               <WordGrid 
                 grid={gridState} 
@@ -1055,7 +1230,7 @@ const App: React.FC = () => {
               </div>
               <div className="text-left">
                 <span className="block font-bold text-[#2a1a10] text-lg font-display">Conforto Visual</span>
-                <span className="text-xs text-[#5d4037] font-serif italic">Alto contraste e letras grandes.</span>
+                <span className="text-xs text-[#5d4037] font-serif italic">Alto contraste, zoom e gestos livres.</span>
               </div>
             </button>
 

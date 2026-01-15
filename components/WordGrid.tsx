@@ -49,9 +49,15 @@ export const WordGrid: React.FC<WordGridProps> = ({
   };
 
   const handlePointerDown = (r: number, c: number, e: React.PointerEvent) => {
-    if (isAccessible && interactionMode === 'PAN') return; // Allow default touch behavior (scroll)
+    // IMPORTANT: If in PAN mode, do NOT stop propagation or capture pointer.
+    // Let it bubble up to the parent container in App.tsx which handles Pan/Zoom.
+    if (isAccessible && interactionMode === 'PAN') return; 
 
     e.preventDefault(); // Prevent scrolling when selecting
+    e.stopPropagation(); // Stop parent from panning if we are selecting
+    
+    e.currentTarget.setPointerCapture(e.pointerId);
+    
     setIsDragging(true);
     setStartCell({ r, c });
     setCurrentSelection([{ r, c }]);
@@ -70,7 +76,10 @@ export const WordGrid: React.FC<WordGridProps> = ({
   };
 
   const handlePointerUp = (e: React.PointerEvent) => {
-    if (isDragging) e.preventDefault();
+    if (isDragging) {
+       e.preventDefault();
+       e.currentTarget.releasePointerCapture(e.pointerId);
+    }
     
     if (isDragging && currentSelection.length > 0) {
       onWordFound(currentSelection);
@@ -80,43 +89,22 @@ export const WordGrid: React.FC<WordGridProps> = ({
     setCurrentSelection([]);
   };
 
-  // Prevent default touch actions ONLY if in SELECT mode
-  useEffect(() => {
-    const ref = gridRef.current;
-    if (!ref) return;
-    
-    const preventDefault = (e: TouchEvent) => {
-       // Only prevent default if we are intending to select
-       if (!isAccessible || interactionMode === 'SELECT') {
-          // Check if touch target is a cell
-          const target = e.target as HTMLElement;
-          if (target.hasAttribute('data-row')) {
-             e.preventDefault();
-          }
-       }
-    };
-    
-    ref.addEventListener('touchmove', preventDefault, { passive: false });
-    return () => {
-      ref.removeEventListener('touchmove', preventDefault);
-    };
-  }, [isAccessible, interactionMode]);
-
   return (
     <div 
       ref={gridRef}
       className={`
         select-none rounded-xl transition-all duration-300
         ${isAccessible 
-           ? 'p-4 bg-[#e6dcc0] shadow-xl border-4 border-[#8b5a2b] mx-auto min-w-[500px]' 
+           ? 'p-4 bg-[#e6dcc0] shadow-xl border-4 border-[#8b5a2b] mx-auto min-w-[500px]' // Min-width ensures it doesn't shrink too small in infinite canvas
            : 'p-3 touch-none bg-parchment-200 shadow-inner border border-wood-light/30 w-full'}
       `}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
       style={{
-         // In Accessible PAN mode, allow browser panning. In SELECT, block it.
-         touchAction: (isAccessible && interactionMode === 'PAN') ? 'auto' : 'none'
+         // In Accessible PAN mode, allow events to bubble (auto/none handled by parent).
+         // In standard mode, block default touch.
+         touchAction: 'none' 
       }}
     >
       <div 
@@ -165,7 +153,7 @@ export const WordGrid: React.FC<WordGridProps> = ({
                 className={`
                   flex items-center justify-center cursor-pointer transition-all duration-100
                   ${isAccessible 
-                    ? 'aspect-square text-xl sm:text-2xl font-bold rounded-lg' // aspect-square prevents compression
+                    ? 'aspect-square text-xl sm:text-2xl font-bold rounded-lg' 
                     : 'aspect-square text-sm sm:text-lg font-bold rounded-sm'}
                   ${cellStyle}
                 `}
