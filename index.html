@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Caça-Palavras Bíblico</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+      
+      body {
+        background-color: #2c1e16; /* Dark background behind the app container */
+        margin: 0;
+        font-family: 'Lora', serif;
+        overflow: hidden; /* Prevent body scroll, handle inside app */
+      }
+      
+      /* Disable text selection for game feel */
+      .no-select {
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+      }
+    </style>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              serif: ['Lora', 'serif'],
+              display: ['Cinzel', 'serif'],
+            },
+            colors: {
+              parchment: {
+                100: '#fcf6e8',
+                200: '#f4e4bc', // Main background
+                300: '#e6d0a0',
+                400: '#d2b48c',
+              },
+              wood: {
+                light: '#a1662f',
+                DEFAULT: '#8b5a2b',
+                dark: '#5d4037',
+                darker: '#3e2723',
+              },
+              nature: {
+                light: '#81c784',
+                DEFAULT: '#4caf50', // Success green
+                dark: '#2e7d32',
+              }
+            }
+          }
+        }
+      }
+    </script>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
