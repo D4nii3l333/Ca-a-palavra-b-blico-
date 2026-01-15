@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, UserProfile, GameMode } from './types';
+import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, UserProfile, GameMode, Achievement, SaveData } from './types';
 import { BOOKS } from './constants';
 import { generateGrid, normalizeWord } from './utils/gameLogic';
+import { logEvent } from './utils/analytics';
 import { WordGrid } from './components/WordGrid';
-import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee } from 'lucide-react';
+import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee, FileText, Download, Upload, Info, MessageSquare, X, Trophy, ExternalLink, Mail, Flame, Ban } from 'lucide-react';
 
-// --- AVATAR CONFIGURATION ---
+// --- DATA CONFIGURATION ---
+
 const AVATARS = [
   { id: 1, color: 'bg-blue-600', icon: User },
   { id: 2, color: 'bg-red-500', icon: Star },
@@ -15,6 +17,14 @@ const AVATARS = [
   { id: 6, color: 'bg-orange-500', icon: BookOpen },
   { id: 7, color: 'bg-teal-600', icon: User },
   { id: 8, color: 'bg-pink-600', icon: Star },
+];
+
+const ACHIEVEMENTS_LIST_DEF: Omit<Achievement, 'unlocked'>[] = [
+  { id: 'first_light', title: 'Primeira Luz', description: 'Complete sua primeira fase.', iconName: 'Star' },
+  { id: 'scholar_novice', title: 'Estudioso', description: 'Complete 5 fases.', iconName: 'BookOpen' },
+  { id: 'hint_seeker', title: 'Buscador', description: 'Use 5 dicas.', iconName: 'Lightbulb' },
+  { id: 'dedicated', title: 'Dedicado', description: 'Jogue por 3 dias seguidos (Simulado: Complete 10 fases).', iconName: 'Flame' },
+  { id: 'master', title: 'Mestre da Palavra', description: 'Desbloqueie todos os livros iniciais.', iconName: 'Award' },
 ];
 
 type AdContext = 'UNLOCK_BOOK' | 'HINT' | 'INTERSTITIAL';
@@ -34,7 +44,6 @@ const App: React.FC = () => {
   
   // Accessibility & Viewport State
   const [interactionMode, setInteractionMode] = useState<'SELECT' | 'PAN'>('SELECT');
-  // ViewState: { x, y, scale } for infinite canvas manipulation
   const [viewState, setViewState] = useState({ x: 0, y: 0, scale: 1.0 });
   
   // Gesture Refs
@@ -44,6 +53,8 @@ const App: React.FC = () => {
 
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  // Staging area for a user attempting to login but hasn't accepted terms yet
+  const [pendingUser, setPendingUser] = useState<UserProfile | null>(null);
 
   // Profile Editing State
   const [tempName, setTempName] = useState('');
@@ -51,19 +62,29 @@ const App: React.FC = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
 
   // Persistence / Progress State
-  const [unlockedBookIds, setUnlockedBookIds] = useState<string[]>(['2john', 'matthew', 'john', 'genesis']); // Default unlocked
-  const [completedLevels, setCompletedLevels] = useState<string[]>([]); // List of level IDs completed
-
+  const [unlockedBookIds, setUnlockedBookIds] = useState<string[]>(['2john', 'matthew', 'john', 'genesis']); 
+  const [completedLevels, setCompletedLevels] = useState<string[]>([]);
+  const [unlockedAchievementIds, setUnlockedAchievementIds] = useState<string[]>([]);
+  const [levelsCompletedTotal, setLevelsCompletedTotal] = useState(0); // Lifetime stats
+  
   // Ad Simulation State
   const [showAdModal, setShowAdModal] = useState(false);
   const [adContext, setAdContext] = useState<AdContext>('UNLOCK_BOOK');
   const [pendingAdAction, setPendingAdAction] = useState<(() => void) | null>(null);
-  const [adTargetBook, setAdTargetBook] = useState<BookData | null>(null); // Only for UNLOCK_BOOK context
+  const [adTargetBook, setAdTargetBook] = useState<BookData | null>(null); 
   const [adTimer, setAdTimer] = useState(60);
   const [isAdPlaying, setIsAdPlaying] = useState(false);
 
+  // Modals State
+  const [showTermsModal, setShowTermsModal] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [feedbackText, setFeedbackText] = useState('');
+  const [showAchievementToast, setShowAchievementToast] = useState<Achievement | null>(null);
+  const [showTutorial, setShowTutorial] = useState(false);
+
   // Ad Frequency Counters (Session based)
-  const [hintUsageCount, setHintUsageCount] = useState(0);
+  const [hintUsageCount, setHintUsageCount] = useState(0); // Session
+  const [hintUsageTotal, setHintUsageTotal] = useState(0); // Lifetime
   const [levelsCompletedSessionCount, setLevelsCompletedSessionCount] = useState(0);
 
   // Game State
@@ -78,35 +99,105 @@ const App: React.FC = () => {
 
   useEffect(() => {
     // Check local storage for existing user
-    const storedUser = localStorage.getItem('bible_word_search_user');
+    const storedData = localStorage.getItem('bible_word_search_save_v1');
     
-    // Simulate a small delay for the "Splash Screen" feel or asset loading
     setTimeout(() => {
-      if (storedUser) {
-        setUserProfile(JSON.parse(storedUser));
-        setScreen(ScreenState.MENU);
+      if (storedData) {
+        try {
+          const parsed: SaveData = JSON.parse(storedData);
+          if (parsed.userProfile) {
+            setUserProfile(parsed.userProfile);
+            setUnlockedBookIds(parsed.unlockedBookIds || []);
+            setCompletedLevels(parsed.completedLevels || []);
+            setUnlockedAchievementIds(parsed.unlockedAchievementIds || []);
+            setHintUsageTotal(parsed.hintUsageCount || 0);
+            setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
+            setScreen(ScreenState.MENU);
+            logEvent('app_open', { user_type: 'returning' });
+          } else {
+            setScreen(ScreenState.LOGIN);
+            logEvent('app_open', { user_type: 'new_or_cleared' });
+          }
+        } catch (e) {
+          console.error("Save data corrupted");
+          setScreen(ScreenState.LOGIN);
+        }
       } else {
         setScreen(ScreenState.LOGIN);
+        logEvent('app_open', { user_type: 'first_time' });
       }
       setIsLoading(false);
     }, 800);
   }, []);
 
+  // Save on significant state changes
+  useEffect(() => {
+    if (userProfile) {
+      const saveData: SaveData = {
+        userProfile,
+        unlockedBookIds,
+        completedLevels,
+        unlockedAchievementIds,
+        hintUsageCount: hintUsageTotal,
+        levelsCompletedTotal
+      };
+      localStorage.setItem('bible_word_search_save_v1', JSON.stringify(saveData));
+    }
+  }, [userProfile, unlockedBookIds, completedLevels, unlockedAchievementIds, hintUsageTotal, levelsCompletedTotal]);
+
+  // --- GAME LOGIC & ACHIEVEMENTS ---
+
+  const checkAchievements = () => {
+    const newUnlocks: string[] = [];
+
+    // First Light
+    if (completedLevels.length >= 1 && !unlockedAchievementIds.includes('first_light')) {
+      newUnlocks.push('first_light');
+    }
+    // Scholar
+    if (completedLevels.length >= 5 && !unlockedAchievementIds.includes('scholar_novice')) {
+      newUnlocks.push('scholar_novice');
+    }
+    // Dedication (Simulated by 10 levels for now)
+    if (levelsCompletedTotal >= 10 && !unlockedAchievementIds.includes('dedicated')) {
+      newUnlocks.push('dedicated');
+    }
+    // Hint Seeker
+    if (hintUsageTotal >= 5 && !unlockedAchievementIds.includes('hint_seeker')) {
+      newUnlocks.push('hint_seeker');
+    }
+
+    if (newUnlocks.length > 0) {
+      setUnlockedAchievementIds(prev => [...prev, ...newUnlocks]);
+      const lastAchieve = ACHIEVEMENTS_LIST_DEF.find(a => a.id === newUnlocks[newUnlocks.length - 1]);
+      if (lastAchieve) {
+        setShowAchievementToast({ ...lastAchieve, unlocked: true });
+        setTimeout(() => setShowAchievementToast(null), 4000);
+        logEvent('achievement_unlocked', { id: lastAchieve.id });
+      }
+    }
+  };
+
+  useEffect(() => {
+    checkAchievements();
+  }, [completedLevels, hintUsageTotal, levelsCompletedTotal]);
+
   // --- ACTIONS ---
 
   const handleGoogleLogin = () => {
     setIsLoggingIn(true);
-    // Simulate API Call
     setTimeout(() => {
       const mockUser: UserProfile = { 
         name: 'Viajante Bíblico', 
         isGuest: false,
-        avatarId: Math.floor(Math.random() * AVATARS.length) + 1
+        avatarId: Math.floor(Math.random() * AVATARS.length) + 1,
+        termsAccepted: false
       };
-      localStorage.setItem('bible_word_search_user', JSON.stringify(mockUser));
-      setUserProfile(mockUser);
+      
+      // Instead of setting UserProfile directly, set PendingUser and open Terms
+      setPendingUser(mockUser);
       setIsLoggingIn(false);
-      setScreen(ScreenState.MENU);
+      setShowTermsModal(true);
     }, 1500);
   };
 
@@ -114,17 +205,44 @@ const App: React.FC = () => {
     const guestUser: UserProfile = { 
       name: 'Visitante', 
       isGuest: true,
-      avatarId: 1 
+      avatarId: 1,
+      termsAccepted: false
     };
-    localStorage.setItem('bible_word_search_user', JSON.stringify(guestUser));
-    setUserProfile(guestUser);
-    setScreen(ScreenState.MENU);
+    
+    // Instead of setting UserProfile directly, set PendingUser and open Terms
+    setPendingUser(guestUser);
+    setShowTermsModal(true);
+  };
+
+  const handleTermsAgreement = () => {
+    if (pendingUser) {
+      const confirmedUser = { ...pendingUser, termsAccepted: true };
+      setUserProfile(confirmedUser);
+      setPendingUser(null);
+      setShowTermsModal(false);
+      setScreen(ScreenState.MENU);
+      logEvent('login_success', { method: confirmedUser.isGuest ? 'guest' : 'google', terms_accepted: true });
+    } else {
+      // Just viewing terms from menu
+      setShowTermsModal(false);
+    }
+  };
+
+  const handleTermsRejection = () => {
+    setPendingUser(null);
+    setShowTermsModal(false);
+    // Stay on Login screen
+    logEvent('login_terms_rejected');
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('bible_word_search_user');
+    localStorage.removeItem('bible_word_search_save_v1');
     setUserProfile(null);
     setScreen(ScreenState.LOGIN);
+    setCompletedLevels([]);
+    setUnlockedBookIds(['2john', 'matthew', 'john', 'genesis']);
+    setUnlockedAchievementIds([]);
+    logEvent('logout');
   };
 
   const handleSwitchOrLinkAccount = () => {
@@ -134,13 +252,85 @@ const App: React.FC = () => {
       const newUser: UserProfile = { 
         name: isUpgrade ? userProfile.name : 'Novo Usuário Google', 
         isGuest: false,
-        avatarId: isUpgrade ? userProfile.avatarId : Math.floor(Math.random() * AVATARS.length) + 1
+        avatarId: isUpgrade ? userProfile.avatarId : Math.floor(Math.random() * AVATARS.length) + 1,
+        termsAccepted: true // If upgrading, assume terms were accepted previously or re-prompt if strictly needed
       };
-      localStorage.setItem('bible_word_search_user', JSON.stringify(newUser));
-      setUserProfile(newUser);
-      setIsLoggingIn(false);
-      setScreen(ScreenState.MENU);
+      
+      // If upgrading from guest who already accepted, we might skip. 
+      // But for simplicity and safety, let's treat new accounts as needing acceptance if the prompt implies "first time on THAT account"
+      if (isUpgrade && userProfile?.termsAccepted) {
+         setUserProfile(newUser);
+         setIsLoggingIn(false);
+         setScreen(ScreenState.MENU);
+      } else {
+         setPendingUser(newUser);
+         setIsLoggingIn(false);
+         setShowTermsModal(true);
+      }
+      
+      logEvent('account_switch');
     }, 1500);
+  };
+
+  const handleExportProgress = () => {
+    if (!userProfile) return;
+    const saveData: SaveData = {
+      userProfile,
+      unlockedBookIds,
+      completedLevels,
+      unlockedAchievementIds,
+      hintUsageCount: hintUsageTotal,
+      levelsCompletedTotal
+    };
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(saveData));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href", dataStr);
+    downloadAnchorNode.setAttribute("download", "progresso_caca_palavras.json");
+    document.body.appendChild(downloadAnchorNode);
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+    logEvent('progress_export');
+  };
+
+  const handleImportProgress = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const fileReader = new FileReader();
+    if (event.target.files && event.target.files.length > 0) {
+      fileReader.readAsText(event.target.files[0], "UTF-8");
+      fileReader.onload = (e) => {
+        try {
+          if (e.target?.result && typeof e.target.result === 'string') {
+            const parsed: SaveData = JSON.parse(e.target.result);
+            // Basic validation
+            if (parsed.userProfile && Array.isArray(parsed.completedLevels)) {
+              setUserProfile(parsed.userProfile);
+              setUnlockedBookIds(parsed.unlockedBookIds);
+              setCompletedLevels(parsed.completedLevels);
+              setUnlockedAchievementIds(parsed.unlockedAchievementIds || []);
+              setHintUsageTotal(parsed.hintUsageCount || 0);
+              setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
+              alert("Progresso importado com sucesso!");
+              logEvent('progress_import_success');
+            } else {
+              throw new Error("Invalid structure");
+            }
+          }
+        } catch (err) {
+          alert("Erro ao ler o arquivo. Verifique se é um backup válido.");
+          logEvent('progress_import_error');
+        }
+      };
+    }
+  };
+
+  const handleFeedbackSubmit = () => {
+    // Simulate API call
+    if (!feedbackText.trim()) return;
+    setTimeout(() => {
+      setShowFeedbackModal(false);
+      setFeedbackText('');
+      alert("Obrigado! Seu feedback foi enviado.");
+      logEvent('feedback_sent');
+    }, 500);
   };
 
   const startEditingProfile = () => {
@@ -155,7 +345,6 @@ const App: React.FC = () => {
     if (userProfile) {
       const updatedProfile = { ...userProfile, name: tempName, avatarId: tempAvatarId };
       setUserProfile(updatedProfile);
-      localStorage.setItem('bible_word_search_user', JSON.stringify(updatedProfile));
       setIsEditingProfile(false);
     }
   };
@@ -166,6 +355,7 @@ const App: React.FC = () => {
     if (unlockedBookIds.includes(book.id) || !book.isLocked) {
       setSelectedBook(book);
       setScreen(ScreenState.LEVEL_SELECT);
+      logEvent('book_open', { book_id: book.id });
     } else {
       setAdTargetBook(book);
       setAdContext('UNLOCK_BOOK');
@@ -173,10 +363,12 @@ const App: React.FC = () => {
         setUnlockedBookIds(prev => [...prev, book.id]);
         setSelectedBook(book);
         setScreen(ScreenState.LEVEL_SELECT);
+        logEvent('book_unlock_ad_completed', { book_id: book.id });
       });
-      setAdTimer(30); // Shorter for demo
+      setAdTimer(30);
       setIsAdPlaying(false);
       setShowAdModal(true);
+      logEvent('ad_start', { context: 'unlock_book' });
     }
   };
 
@@ -202,12 +394,12 @@ const App: React.FC = () => {
       pendingAdAction();
       setPendingAdAction(null);
     }
+    logEvent('ad_completed', { context: adContext });
   };
 
   // Called when clicking a level in Level Select
   const handleLevelPreSelect = (level: LevelData, index: number) => {
     setPendingLevel({ level, index });
-    // The modal will now be shown because pendingLevel is not null
   };
 
   const startGameWithMode = (mode: GameMode) => {
@@ -228,6 +420,15 @@ const App: React.FC = () => {
       
       setPendingLevel(null);
       setScreen(ScreenState.GAME);
+      logEvent('level_start', { level_id: pendingLevel.level.id, mode });
+
+      // Check Tutorial
+      const tutorialSeen = localStorage.getItem('tutorial_seen');
+      if (!tutorialSeen) {
+        setShowTutorial(true);
+        localStorage.setItem('tutorial_seen', 'true');
+      }
+
     } catch (e) {
       console.error("Failed to start level", e);
       alert("Erro ao carregar fase. Tente novamente.");
@@ -239,8 +440,9 @@ const App: React.FC = () => {
       if (!completedLevels.includes(currentLevel.id)) {
         setCompletedLevels(prev => [...prev, currentLevel.id]);
       }
-      // Increment session counter for ads
       setLevelsCompletedSessionCount(prev => prev + 1);
+      setLevelsCompletedTotal(prev => prev + 1);
+      logEvent('level_complete', { level_id: currentLevel.id });
     }
   };
 
@@ -285,6 +487,8 @@ const App: React.FC = () => {
       setFoundCoordinates(prev => [...prev, solution]);
       // Only increment count if the hint is successfully executed/delivered
       setHintUsageCount(prev => prev + 1);
+      setHintUsageTotal(prev => prev + 1);
+      logEvent('hint_used', { level_id: currentLevel.id });
     }
   };
 
@@ -297,6 +501,7 @@ const App: React.FC = () => {
       setAdTimer(15);
       setIsAdPlaying(false);
       setShowAdModal(true);
+      logEvent('ad_start', { context: 'hint' });
     } else {
       executeHint();
     }
@@ -318,8 +523,8 @@ const App: React.FC = () => {
           setFoundCoordinates([]);
           setCurrentLevel(nextLvl);
           setCurrentLevelIndex(nextIndex);
-          // Reset view
           setViewState({ x: 0, y: 0, scale: gameMode === GameMode.ACCESSIBLE ? 1.0 : 1.0 });
+          logEvent('level_start', { level_id: nextLvl.id, mode: gameMode });
         } catch (e) {
           console.error("Failed to start next level", e);
         }
@@ -334,6 +539,7 @@ const App: React.FC = () => {
       setAdTimer(30);
       setIsAdPlaying(false);
       setShowAdModal(true);
+      logEvent('ad_start', { context: 'interstitial' });
     } else {
       proceedToNextLevel();
     }
@@ -421,6 +627,7 @@ const App: React.FC = () => {
 
   // --- RENDERERS ---
 
+  // ... (Avatars and VerseText Renders remain the same)
   const renderAvatar = (id: number, sizeClass: string = "w-10 h-10", iconSize: number = 20) => {
     const avatar = AVATARS.find(a => a.id === id) || AVATARS[0];
     const IconComponent = avatar.icon;
@@ -470,6 +677,21 @@ const App: React.FC = () => {
     );
   };
 
+  const renderAchievementToast = () => {
+    if (!showAchievementToast) return null;
+    return (
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] animate-bounce-short">
+        <div className="bg-nature-dark text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 border-2 border-nature-light">
+          <Trophy className="w-6 h-6 text-yellow-300 fill-current" />
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest opacity-80">Conquista Desbloqueada!</p>
+            <p className="font-display font-bold text-lg">{showAchievementToast.title}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const renderAdModal = () => {
     if (!showAdModal) return null;
 
@@ -500,6 +722,7 @@ const App: React.FC = () => {
                  setShowAdModal(false);
                  setAdTargetBook(null);
                  setPendingAdAction(null); // Explicitly clear pending action on cancel
+                 logEvent('ad_cancelled', { context: adContext });
                }}
                className="absolute top-2 right-2 text-wood-dark hover:bg-wood/10 p-2 rounded-full transition"
              >
@@ -557,7 +780,6 @@ const App: React.FC = () => {
     );
   };
 
-  // ... (Keep existing renderLogin, renderMenu, renderProfile, renderBookSelection, renderLevelSelect logic)
   const renderLogin = () => (
     <div className="flex flex-col items-center justify-center h-full px-8 animate-fade-in relative">
        <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/aged-paper.png')] pointer-events-none"></div>
@@ -615,13 +837,83 @@ const App: React.FC = () => {
 
       <div className="mt-auto pb-6 text-center opacity-60">
         <p className="text-xs text-wood-dark font-bold mb-2">Tradução: Bíblia Almeida Corrigida Fiel (ACF)</p>
-        <p className="text-[10px] text-wood-dark max-w-[250px] mx-auto leading-relaxed opacity-80">
+        <button onClick={() => setShowTermsModal(true)} className="text-[10px] text-wood-dark max-w-[250px] mx-auto leading-relaxed opacity-80 hover:underline">
           Ao continuar, você concorda com nossos Termos de Serviço e Política de Privacidade.
-        </p>
+        </button>
       </div>
     </div>
   );
 
+  const renderTermsModal = () => {
+    if (!showTermsModal) return null;
+    
+    // If pendingUser is set, it means we are in the login flow.
+    // If not, we are just viewing from the "About" page.
+    const isLoginFlow = !!pendingUser;
+
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full h-[80vh] overflow-hidden border-2 border-wood relative flex flex-col">
+           <div className="p-4 border-b border-wood/20 flex justify-between items-center bg-wood/5">
+              <h3 className="font-display font-bold text-lg text-wood-darker">Termos & Privacidade</h3>
+              {!isLoginFlow && (
+                <button 
+                  onClick={() => setShowTermsModal(false)}
+                  className="text-wood-dark hover:bg-wood/10 p-1 rounded-full"
+                >
+                  <X size={20} />
+                </button>
+              )}
+           </div>
+           <div className="p-6 overflow-y-auto text-wood-dark text-sm leading-relaxed space-y-4">
+              <h4 className="font-bold text-base">1. Termos de Uso</h4>
+              <p>Bem-vindo ao Caça-Palavras Bíblico. Ao usar este aplicativo, você concorda em utilizá-lo para fins de entretenimento e aprendizado pessoal.</p>
+              <p>O conteúdo bíblico é extraído da versão Almeida Corrigida Fiel (ACF). Reservamo-nos o direito de atualizar o conteúdo e as funcionalidades a qualquer momento.</p>
+              
+              <h4 className="font-bold text-base mt-6">2. Política de Privacidade</h4>
+              <p>Respeitamos a sua privacidade. Este aplicativo não coleta dados pessoais identificáveis sem o seu consentimento explícito.</p>
+              <ul className="list-disc pl-5 space-y-1">
+                 <li><strong>Dados de Progresso:</strong> Seus progressos (fases, conquistas) são salvos localmente no seu dispositivo.</li>
+                 <li><strong>Analytics:</strong> Coletamos dados anônimos de uso (fases jogadas, cliques) para melhorar a experiência do usuário.</li>
+              </ul>
+              <p>Não vendemos nem compartilhamos seus dados com terceiros para fins comerciais.</p>
+              
+              <h4 className="font-bold text-base mt-6">3. Contato</h4>
+              <p>Para dúvidas sobre estes termos, utilize a opção de Feedback no aplicativo.</p>
+           </div>
+           <div className="p-4 border-t border-wood/20 bg-wood/5 flex flex-col gap-3">
+              {isLoginFlow ? (
+                <>
+                  <button 
+                    onClick={handleTermsAgreement}
+                    className="w-full bg-nature hover:bg-nature-dark text-white font-bold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                  >
+                    <Check size={18} /> Concordo e Continuar
+                  </button>
+                  <button 
+                    onClick={handleTermsRejection}
+                    className="w-full bg-transparent hover:bg-red-100 text-red-800 font-bold py-2 rounded-xl shadow-sm border border-red-200 transition flex items-center justify-center gap-2"
+                  >
+                    <Ban size={18} /> Não Concordo
+                  </button>
+                </>
+              ) : (
+                <button 
+                  onClick={() => setShowTermsModal(false)}
+                  className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-bold py-3 rounded-xl shadow-md transition"
+                >
+                  Entendi
+                </button>
+              )}
+           </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ... (Keep existing renderMenu, renderProfile, renderAbout, renderBookSelection, renderLevelSelect, renderGame, renderModeSelectionModal, renderFeedbackModal, renderAchievementToast, renderAdModal)
+
+  // ... [Inside renderMenu function (unchanged except for structure context)]
   const renderMenu = () => (
     <div className="flex flex-col items-center justify-center h-full space-y-8 animate-fade-in px-6 relative">
       <button 
@@ -663,24 +955,31 @@ const App: React.FC = () => {
         </button>
       </div>
       
-      <div className="mt-auto text-wood/60 text-sm italic pt-8 pb-4 text-center">
-        <p className="mb-2">"Lâmpada para os meus pés é a tua palavra"</p>
-        <p className="text-[10px] uppercase tracking-wider opacity-70">Tradução: Almeida Corrigida Fiel (ACF)</p>
+      <div className="mt-auto w-full flex justify-between items-end pb-4 px-2">
+         <button 
+           onClick={() => setScreen(ScreenState.ABOUT)} 
+           className="text-wood-dark opacity-60 hover:opacity-100 hover:underline text-xs flex items-center gap-1"
+         >
+           <Info size={14} /> Sobre
+         </button>
+         <div className="text-wood/60 text-sm italic text-center">
+            <p className="mb-2">"Lâmpada para os meus pés..."</p>
+            <p className="text-[10px] uppercase tracking-wider opacity-70">Almeida Corrigida Fiel (ACF)</p>
+         </div>
+         <div className="w-10"></div>{/* Spacer to center the quote somewhat */}
       </div>
     </div>
   );
 
-  const renderProfile = () => {
-    if (!userProfile) return null;
-    return (
-      <div className="flex flex-col h-full animate-fade-in bg-parchment-200">
-        <div className="p-4 bg-wood shadow-md text-parchment-100 flex items-center shrink-0 z-10">
-           <button 
-             onClick={() => {
-               setIsEditingProfile(false);
-               setScreen(ScreenState.MENU);
-             }}
-             className="flex items-center font-bold hover:bg-white/10 p-2 rounded transition"
+  const renderProfile = () => (
+    <div className="flex flex-col h-full animate-fade-in bg-parchment-200">
+      <div className="p-4 bg-wood shadow-md text-parchment-100 flex items-center shrink-0 z-10">
+         <button 
+           onClick={() => {
+             setIsEditingProfile(false);
+             setScreen(ScreenState.MENU);
+           }}
+           className="flex items-center font-bold hover:bg-white/10 p-2 rounded transition"
            >
              <ChevronLeft className="w-6 h-6" />
            </button>
@@ -755,7 +1054,44 @@ const App: React.FC = () => {
               </button>
             )}
           </div>
+
+          {/* ACHIEVEMENTS SECTION */}
+          <div className="w-full max-w-sm mb-8">
+             <h3 className="text-center font-serif font-bold text-wood-darker text-lg mb-4 flex items-center justify-center gap-2"><Trophy size={18} /> Conquistas</h3>
+             <div className="bg-parchment-100 rounded-xl border border-wood/20 p-2 grid grid-cols-5 gap-2">
+                {ACHIEVEMENTS_LIST_DEF.map((ach) => {
+                   const isUnlocked = unlockedAchievementIds.includes(ach.id);
+                   const Icon = ach.iconName === 'Star' ? Star : ach.iconName === 'BookOpen' ? BookOpen : ach.iconName === 'Lightbulb' ? Lightbulb : ach.iconName === 'Flame' ? Flame : Award;
+                   return (
+                     <div key={ach.id} className="relative group flex flex-col items-center justify-center p-2 rounded-lg hover:bg-black/5 transition" title={ach.title}>
+                        <Icon className={`w-8 h-8 ${isUnlocked ? 'text-yellow-500 fill-yellow-500 drop-shadow-sm' : 'text-gray-400 opacity-30'}`} />
+                        {isUnlocked && <div className="absolute top-0 right-0 w-2 h-2 bg-nature rounded-full"></div>}
+                     </div>
+                   )
+                })}
+             </div>
+             <p className="text-center text-[10px] text-wood opacity-50 mt-2">Continue jogando para desbloquear mais.</p>
+          </div>
+
           <div className="w-full h-px bg-wood/20 mb-8"></div>
+          
+          {/* DATA MANAGEMENT */}
+          <div className="w-full max-w-xs space-y-4 mb-8">
+             <h3 className="text-center font-serif font-bold text-wood-darker text-lg mb-2">Dados e Progresso</h3>
+             <div className="flex gap-2">
+                <button 
+                  onClick={handleExportProgress}
+                  className="flex-1 bg-parchment-300 hover:bg-parchment-400 text-wood-darker font-bold py-2 px-3 rounded-lg shadow-sm border border-wood/20 flex items-center justify-center gap-2 text-sm"
+                >
+                  <Download size={16} /> Exportar
+                </button>
+                <label className="flex-1 bg-parchment-300 hover:bg-parchment-400 text-wood-darker font-bold py-2 px-3 rounded-lg shadow-sm border border-wood/20 flex items-center justify-center gap-2 text-sm cursor-pointer">
+                  <Upload size={16} /> Importar
+                  <input type="file" accept=".json" className="hidden" onChange={handleImportProgress} />
+                </label>
+             </div>
+          </div>
+
           <div className="w-full max-w-xs space-y-4">
             <h3 className="text-center font-serif font-bold text-wood-darker text-lg mb-4">Conta</h3>
             {userProfile.isGuest ? (
@@ -779,6 +1115,14 @@ const App: React.FC = () => {
                 <RefreshCw size={18} /> Trocar Conta Google
               </button>
             )}
+            
+            <button 
+               onClick={() => setShowFeedbackModal(true)}
+               className="w-full bg-parchment-100 hover:bg-parchment-300 text-wood-darker font-bold py-3 px-4 rounded-xl shadow border border-wood/20 flex items-center justify-center gap-2"
+            >
+               <MessageSquare size={18} /> Enviar Feedback
+            </button>
+
             <button 
               onClick={handleLogout}
               className="w-full bg-red-100 hover:bg-red-200 text-red-800 font-bold py-3 px-4 rounded-xl shadow border border-red-200 flex items-center justify-center gap-2"
@@ -789,7 +1133,51 @@ const App: React.FC = () => {
         </div>
       </div>
     );
-  };
+
+  const renderAbout = () => (
+    <div className="flex flex-col h-full animate-fade-in bg-parchment-200">
+      <div className="p-4 bg-wood shadow-md text-parchment-100 flex items-center shrink-0 z-10">
+         <button 
+           onClick={() => setScreen(ScreenState.MENU)}
+           className="flex items-center font-bold hover:bg-white/10 p-2 rounded transition"
+         >
+           <ChevronLeft className="w-6 h-6" />
+         </button>
+         <h2 className="text-xl font-display font-bold ml-4">Sobre</h2>
+      </div>
+      <div className="flex-1 overflow-y-auto p-8 text-center text-wood-darker">
+         <BookOpen className="w-20 h-20 text-wood mx-auto mb-6" />
+         <h1 className="text-2xl font-display font-bold mb-2">Caça-Palavras Bíblico</h1>
+         <p className="font-serif italic opacity-80 mb-8">Versão 1.2.0</p>
+         
+         <div className="bg-parchment-100 p-6 rounded-xl border border-wood/20 shadow-sm text-left space-y-4 mb-8">
+            <h3 className="font-bold text-lg border-b border-wood/20 pb-2">Créditos</h3>
+            <p className="text-sm">
+               <strong>Texto Bíblico:</strong><br/>
+               Bíblia Almeida Corrigida Fiel (ACF)<br/>
+               <span className="text-xs opacity-70">Fielmente baseada no Texto Massorético (VT) e no Textus Receptus (NT).</span>
+            </p>
+            <p className="text-sm">
+               <strong>Design & Desenvolvimento:</strong><br/>
+               Equipe Caça-Palavras Bíblico
+            </p>
+         </div>
+
+         <div className="space-y-4">
+            <button onClick={() => setShowTermsModal(true)} className="flex items-center justify-center w-full gap-2 text-wood-dark hover:underline font-bold text-sm">
+               <FileText size={16} /> Termos de Uso e Privacidade
+            </button>
+            <button onClick={() => setShowFeedbackModal(true)} className="flex items-center justify-center w-full gap-2 text-wood-dark hover:underline font-bold text-sm">
+               <MessageSquare size={16} /> Relatar Problema
+            </button>
+         </div>
+         
+         <p className="mt-12 text-xs opacity-50">
+            © 2024 Todos os direitos reservados.
+         </p>
+      </div>
+    </div>
+  );
 
   const renderBookSelection = () => {
     // ... Book Selection Logic (Same as before)
@@ -1032,8 +1420,40 @@ const App: React.FC = () => {
     const isAccessible = gameMode === GameMode.ACCESSIBLE;
 
     return (
-      <div className={`flex flex-col h-full max-h-screen animate-fade-in ${isAccessible ? 'bg-[#faf6e6]' : 'bg-parchment-200'}`}>
+      <div className={`flex flex-col h-full max-h-screen animate-fade-in ${isAccessible ? 'bg-[#faf6e6]' : 'bg-parchment-200'} relative`}>
         
+        {/* Tutorial Overlay */}
+        {showTutorial && (
+          <div className="absolute inset-0 z-[100] bg-black/80 flex items-center justify-center p-6 text-center animate-fade-in">
+             <div className="bg-parchment-100 p-6 rounded-2xl max-w-sm border-4 border-nature shadow-2xl relative">
+                <div className="absolute -top-4 -left-4 bg-nature text-white p-3 rounded-full shadow-lg">
+                   <Lightbulb size={24} />
+                </div>
+                <h3 className="font-display font-bold text-2xl text-wood-darker mb-4">Como Jogar</h3>
+                <div className="space-y-4 text-left text-wood-dark">
+                   <p className="flex items-start gap-3">
+                      <span className="bg-wood/20 font-bold rounded px-2 py-0.5">1</span>
+                      <span>Encontre as palavras destacadas do versículo bíblico.</span>
+                   </p>
+                   <p className="flex items-start gap-3">
+                      <span className="bg-wood/20 font-bold rounded px-2 py-0.5">2</span>
+                      <span>Deslize o dedo sobre as letras na grade para marcar a palavra.</span>
+                   </p>
+                   <p className="flex items-start gap-3">
+                      <span className="bg-wood/20 font-bold rounded px-2 py-0.5">3</span>
+                      <span>Use a <Lightbulb className="inline w-4 h-4 text-yellow-600" /> se ficar preso!</span>
+                   </p>
+                </div>
+                <button 
+                  onClick={() => setShowTutorial(false)}
+                  className="mt-6 w-full bg-nature hover:bg-nature-dark text-white font-bold py-3 rounded-xl shadow-lg border-b-4 border-nature-dark active:scale-95 transition"
+                >
+                  Entendi!
+                </button>
+             </div>
+          </div>
+        )}
+
         {/* Header - Consistent across modes, but accessible has more contrast */}
         <div className={`p-3 shadow-md flex items-center justify-between z-20 shrink-0 transition-colors duration-300 ${isAccessible ? 'bg-wood-darker text-parchment-100' : 'bg-wood text-parchment-100'}`}>
           <button 
@@ -1246,6 +1666,43 @@ const App: React.FC = () => {
     );
   };
 
+  const renderFeedbackModal = () => {
+    if (!showFeedbackModal) return null;
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-sm w-full overflow-hidden border-2 border-wood relative flex flex-col">
+           <button 
+             onClick={() => setShowFeedbackModal(false)}
+             className="absolute top-2 right-2 text-wood-dark hover:bg-wood/10 p-2 rounded-full"
+           >
+             <X size={20} />
+           </button>
+           <div className="p-5 bg-wood/5 border-b border-wood/10">
+              <h3 className="font-display font-bold text-xl text-wood-darker flex items-center gap-2">
+                 <MessageSquare size={20} /> Feedback
+              </h3>
+           </div>
+           <div className="p-6">
+              <p className="text-sm text-wood-dark mb-4">Encontrou um erro ou tem uma sugestão? Conte para nós.</p>
+              <textarea 
+                className="w-full h-32 p-3 rounded-lg border border-wood/30 bg-white text-wood-darker resize-none focus:outline-none focus:border-wood mb-4 text-sm"
+                placeholder="Descreva aqui..."
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+              />
+              <button 
+                onClick={handleFeedbackSubmit}
+                disabled={!feedbackText.trim()}
+                className="w-full bg-nature hover:bg-nature-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl shadow-md transition"
+              >
+                Enviar Mensagem
+              </button>
+           </div>
+        </div>
+      </div>
+    )
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen w-full flex items-center justify-center bg-wood-darker">
@@ -1262,11 +1719,16 @@ const App: React.FC = () => {
         {screen === ScreenState.LOGIN && renderLogin()}
         {screen === ScreenState.MENU && renderMenu()}
         {screen === ScreenState.PROFILE && renderProfile()}
+        {screen === ScreenState.ABOUT && renderAbout()}
         {screen === ScreenState.BOOKS && renderBookSelection()}
         {screen === ScreenState.LEVEL_SELECT && renderLevelSelect()}
         {screen === ScreenState.GAME && renderGame()}
+        
         {renderAdModal()}
         {renderModeSelectionModal()}
+        {renderTermsModal()}
+        {renderFeedbackModal()}
+        {renderAchievementToast()}
       </div>
     </div>
   );

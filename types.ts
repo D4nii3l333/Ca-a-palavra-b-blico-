@@ -5,6 +5,7 @@ export enum ScreenState {
   LEVEL_SELECT = 'LEVEL_SELECT',
   GAME = 'GAME',
   PROFILE = 'PROFILE',
+  ABOUT = 'ABOUT',
 }
 
 export enum GameMode {
@@ -16,6 +17,24 @@ export interface UserProfile {
   name: string;
   isGuest: boolean;
   avatarId: number; // ID corresponding to a color/icon combo
+  termsAccepted?: boolean; // New field to track acceptance
+}
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  iconName: 'Star' | 'BookOpen' | 'Lightbulb' | 'Award' | 'Flame'; 
+  unlocked: boolean;
+}
+
+export interface SaveData {
+  userProfile: UserProfile | null;
+  unlockedBookIds: string[];
+  completedLevels: string[];
+  unlockedAchievementIds: string[];
+  hintUsageCount: number;
+  levelsCompletedTotal: number; // Total lifetime
 }
 
 export interface WordConfig {
