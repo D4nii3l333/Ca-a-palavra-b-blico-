@@ -119,7 +119,7 @@ const App: React.FC = () => {
         const cloudData = await api.loadData(googleId);
 
         if (cloudData && cloudData.userProfile) {
-          // Existing User
+          // Existing User - RESTORE DATA
           setUserProfile(cloudData.userProfile);
           setUnlockedBookIds(cloudData.unlockedBookIds || []);
           setCompletedLevels(cloudData.completedLevels || []);
@@ -285,14 +285,17 @@ const App: React.FC = () => {
       setShowTermsModal(false);
       setScreen(ScreenState.MENU);
       
-      // Initial Save to ensure DB record exists immediately
+      // Initial Save or Sync
+      // IMPORTANT: usage of current state variables (unlockedBookIds, etc.) 
+      // ensures that if a Guest upgrades to Google, their current progress is saved to the Cloud
+      // instead of being wiped.
       const initialSave: SaveData = {
         userProfile: confirmedUser,
-        unlockedBookIds: ['2john', 'matthew', 'john', 'genesis'],
-        completedLevels: [],
-        unlockedAchievementIds: [],
-        hintUsageCount: 0,
-        levelsCompletedTotal: 0
+        unlockedBookIds: unlockedBookIds, // Use current state
+        completedLevels: completedLevels, // Use current state
+        unlockedAchievementIds: unlockedAchievementIds, // Use current state
+        hintUsageCount: hintUsageTotal,
+        levelsCompletedTotal: levelsCompletedTotal
       };
       
       api.saveData(initialSave, pendingAuthId || undefined);
@@ -325,59 +328,6 @@ const App: React.FC = () => {
   const handleSwitchOrLinkAccount = () => {
     // If guest wants to switch, we trigger google login
     triggerGoogleLogin();
-  };
-
-  const handleExportProgress = () => {
-    if (!userProfile) return;
-    const saveData: SaveData = {
-      userProfile,
-      unlockedBookIds,
-      completedLevels,
-      unlockedAchievementIds,
-      hintUsageCount: hintUsageTotal,
-      levelsCompletedTotal
-    };
-    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(saveData));
-    const downloadAnchorNode = document.createElement('a');
-    downloadAnchorNode.setAttribute("href", dataStr);
-    downloadAnchorNode.setAttribute("download", "progresso_caca_palavras.json");
-    document.body.appendChild(downloadAnchorNode);
-    downloadAnchorNode.click();
-    downloadAnchorNode.remove();
-    logEvent('progress_export');
-  };
-
-  const handleImportProgress = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const fileReader = new FileReader();
-    if (event.target.files && event.target.files.length > 0) {
-      fileReader.readAsText(event.target.files[0], "UTF-8");
-      fileReader.onload = (e) => {
-        try {
-          if (e.target?.result && typeof e.target.result === 'string') {
-            const parsed: SaveData = JSON.parse(e.target.result);
-            if (parsed.userProfile && Array.isArray(parsed.completedLevels)) {
-              setUserProfile(parsed.userProfile);
-              setUnlockedBookIds(parsed.unlockedBookIds);
-              setCompletedLevels(parsed.completedLevels);
-              setUnlockedAchievementIds(parsed.unlockedAchievementIds || []);
-              setHintUsageTotal(parsed.hintUsageCount || 0);
-              setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
-              alert("Progresso importado com sucesso!");
-              
-              // Sync imported data to cloud immediately
-              api.saveData(parsed, authUserId || undefined);
-              
-              logEvent('progress_import_success');
-            } else {
-              throw new Error("Invalid structure");
-            }
-          }
-        } catch (err) {
-          alert("Erro ao ler o arquivo. Verifique se é um backup válido.");
-          logEvent('progress_import_error');
-        }
-      };
-    }
   };
 
   const handleFeedbackSubmit = () => {
@@ -1101,23 +1051,6 @@ const App: React.FC = () => {
 
           <div className="w-full h-px bg-wood/20 mb-8"></div>
           
-          {/* DATA MANAGEMENT */}
-          <div className="w-full max-w-xs space-y-4 mb-8">
-             <h3 className="text-center font-serif font-bold text-wood-darker text-lg mb-2">Dados e Progresso</h3>
-             <div className="flex gap-2">
-                <button 
-                  onClick={handleExportProgress}
-                  className="flex-1 bg-parchment-300 hover:bg-parchment-400 text-wood-darker font-bold py-2 px-3 rounded-lg shadow-sm border border-wood/20 flex items-center justify-center gap-2 text-sm"
-                >
-                  <Download size={16} /> Exportar
-                </button>
-                <label className="flex-1 bg-parchment-300 hover:bg-parchment-400 text-wood-darker font-bold py-2 px-3 rounded-lg shadow-sm border border-wood/20 flex items-center justify-center gap-2 text-sm cursor-pointer">
-                  <Upload size={16} /> Importar
-                  <input type="file" accept=".json" className="hidden" onChange={handleImportProgress} />
-                </label>
-             </div>
-          </div>
-
           <div className="w-full max-w-xs space-y-4">
             <h3 className="text-center font-serif font-bold text-wood-darker text-lg mb-4">Conta</h3>
             {userProfile.isGuest ? (
