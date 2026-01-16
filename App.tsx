@@ -1473,7 +1473,7 @@ const App: React.FC = () => {
           
           {/* Verse Text Area - Collapsible */}
           <div className={`shrink-0 transition-colors z-20 relative ${isAccessible ? 'bg-[#faf6e6] border-[#e6dcc0]' : 'bg-parchment-100 border-wood/10'} border-b shadow-sm`}>
-             <div className={`overflow-hidden transition-all duration-300 ${isVerseCollapsed ? 'max-h-0 opacity-0' : 'max-h-60 opacity-100'}`}>
+             <div className={`transition-all duration-300 ${isVerseCollapsed ? 'max-h-0 opacity-0 overflow-hidden' : 'max-h-60 opacity-100 overflow-y-auto custom-scrollbar'}`}>
                <div className="p-6 pb-2">
                  <div className={`
                    leading-relaxed text-center transition-all duration-300
@@ -1603,45 +1603,43 @@ const App: React.FC = () => {
 
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-sm w-full overflow-hidden border-4 border-wood relative">
-          <div className="bg-wood p-4 text-center relative">
-            <h3 className="text-xl font-display font-bold text-parchment-100">Modo de Jogo</h3>
-            <button 
-              onClick={() => setPendingLevel(null)}
-              className="absolute top-1/2 -translate-y-1/2 right-4 text-parchment-100/60 hover:text-white"
-            >
-              <X size={20} />
-            </button>
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-sm w-full border-4 border-wood relative overflow-hidden">
+          <div className="bg-wood p-4 text-center">
+            <h3 className="text-xl font-display font-bold text-parchment-100">Escolha o Modo</h3>
           </div>
-          
           <div className="p-6 space-y-4">
-            <p className="text-wood-dark text-center mb-4">Como você gostaria de jogar esta fase?</p>
-            
-            <button 
-              onClick={() => startGameWithMode(GameMode.STANDARD)}
-              className="w-full bg-parchment-300 hover:bg-parchment-300/80 text-wood-darker font-bold py-4 px-4 rounded-xl shadow-sm border-2 border-wood/20 flex items-center gap-4 transition group"
-            >
-              <div className="bg-wood text-parchment-100 p-2 rounded-lg group-hover:scale-110 transition">
-                <BookOpen size={24} />
-              </div>
-              <div className="text-left">
-                <div className="font-display font-bold text-lg">Padrão</div>
-                <div className="text-xs opacity-70 font-normal">Visual clássico de pergaminho</div>
-              </div>
-            </button>
+             <button 
+               onClick={() => startGameWithMode(GameMode.STANDARD)}
+               className="w-full bg-parchment-300 hover:bg-parchment-200 text-wood-darker font-bold py-4 px-6 rounded-xl shadow border-2 border-wood/20 flex items-center gap-4 transition group"
+             >
+                <div className="bg-wood text-parchment-100 p-2 rounded-lg group-hover:scale-110 transition">
+                   <Scroll size={24} />
+                </div>
+                <div className="text-left">
+                   <div className="text-lg">Padrão</div>
+                   <div className="text-xs opacity-60 font-serif">Visual clássico de pergaminho</div>
+                </div>
+             </button>
 
-            <button 
-              onClick={() => startGameWithMode(GameMode.ACCESSIBLE)}
-              className="w-full bg-[#fdfbf7] hover:bg-white text-[#2a1a10] font-bold py-4 px-4 rounded-xl shadow-sm border-2 border-[#d1c4a0] flex items-center gap-4 transition group"
-            >
-              <div className="bg-nature text-white p-2 rounded-lg group-hover:scale-110 transition">
-                <Eye size={24} />
-              </div>
-              <div className="text-left">
-                <div className="font-display font-bold text-lg">Acessível</div>
-                <div className="text-xs opacity-70 font-normal">Alto contraste, botões grandes</div>
-              </div>
-            </button>
+             <button 
+               onClick={() => startGameWithMode(GameMode.ACCESSIBLE)}
+               className="w-full bg-[#faf6e6] hover:bg-white text-[#2a1a10] font-bold py-4 px-6 rounded-xl shadow border-4 border-nature-dark flex items-center gap-4 transition group"
+             >
+                <div className="bg-nature-dark text-white p-2 rounded-lg group-hover:scale-110 transition">
+                   <Eye size={24} />
+                </div>
+                <div className="text-left">
+                   <div className="text-lg">Acessível</div>
+                   <div className="text-xs opacity-60 font-serif">Alto contraste, botões grandes e zoom</div>
+                </div>
+             </button>
+
+             <button 
+               onClick={() => setPendingLevel(null)}
+               className="w-full text-wood-dark py-2 text-sm hover:underline"
+             >
+               Cancelar
+             </button>
           </div>
         </div>
       </div>
@@ -1650,55 +1648,59 @@ const App: React.FC = () => {
 
   const renderFeedbackModal = () => {
     if (!showFeedbackModal) return null;
-
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full overflow-hidden border-2 border-wood relative">
-          <div className="p-4 bg-wood text-parchment-100 flex justify-between items-center">
-             <h3 className="font-display font-bold text-lg">Feedback</h3>
-             <button onClick={() => setShowFeedbackModal(false)} className="hover:bg-white/10 p-1 rounded-full">
-               <X size={20} />
-             </button>
-          </div>
-          <div className="p-6">
-             <p className="text-wood-dark text-sm mb-4">Encontrou um erro ou tem uma sugestão? Conte-nos!</p>
-             <textarea 
-               value={feedbackText}
-               onChange={(e) => setFeedbackText(e.target.value)}
-               className="w-full bg-white border-2 border-wood/20 rounded-xl p-3 h-32 text-wood-darker resize-none focus:outline-none focus:border-wood"
-               placeholder="Digite sua mensagem aqui..."
-             ></textarea>
-             <div className="mt-4 flex justify-end">
-                <button 
-                  onClick={handleFeedbackSubmit}
-                  className="bg-nature hover:bg-nature-dark text-white font-bold py-2 px-6 rounded-lg shadow-md"
-                >
-                  Enviar
-                </button>
-             </div>
-          </div>
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full border-2 border-wood relative flex flex-col overflow-hidden">
+           <div className="p-4 bg-wood/10 border-b border-wood/20 flex justify-between items-center">
+              <h3 className="font-display font-bold text-lg text-wood-darker">Enviar Feedback</h3>
+              <button 
+                onClick={() => setShowFeedbackModal(false)}
+                className="text-wood-dark hover:bg-wood/10 p-1 rounded-full"
+              >
+                <X size={20} />
+              </button>
+           </div>
+           <div className="p-6 space-y-4">
+              <p className="text-sm text-wood-dark">Encontrou um erro ou tem uma sugestão? Conte-nos!</p>
+              <textarea
+                value={feedbackText}
+                onChange={(e) => setFeedbackText(e.target.value)}
+                className="w-full h-32 bg-white/50 border-2 border-wood/20 rounded-lg p-3 text-wood-darker font-bold focus:outline-none focus:border-wood placeholder-wood/30 resize-none"
+                placeholder="Digite sua mensagem aqui..."
+              />
+              <button 
+                onClick={handleFeedbackSubmit}
+                className="w-full bg-nature hover:bg-nature-dark text-white font-bold py-3 rounded-xl shadow-md transition"
+              >
+                Enviar
+              </button>
+           </div>
         </div>
       </div>
     );
   };
 
   return (
-    <div className="h-[100dvh] w-full bg-parchment-200 overflow-hidden font-sans select-none relative">
-       {/* Global Modals */}
+    <div className="h-full w-full max-w-md mx-auto bg-parchment-200 shadow-2xl overflow-hidden relative text-wood-darker font-sans select-none touch-none">
+       {/* Global Background Texture */}
+       <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/aged-paper.png')] z-0"></div>
+
+       <div className="relative z-10 h-full flex flex-col">
+         {screen === ScreenState.LOGIN && renderLogin()}
+         {screen === ScreenState.MENU && renderMenu()}
+         {screen === ScreenState.PROFILE && renderProfile()}
+         {screen === ScreenState.ABOUT && renderAbout()}
+         {screen === ScreenState.BOOKS && renderBookSelection()}
+         {screen === ScreenState.LEVEL_SELECT && renderLevelSelect()}
+         {screen === ScreenState.GAME && renderGame()}
+       </div>
+       
+       {/* Modals & Overlays */}
        {renderAdModal()}
        {renderTermsModal()}
        {renderAchievementToast()}
        {renderModeSelectionModal()}
        {renderFeedbackModal()}
-
-       {/* Screen Routing */}
-       {screen === ScreenState.LOGIN && renderLogin()}
-       {screen === ScreenState.MENU && renderMenu()}
-       {screen === ScreenState.PROFILE && renderProfile()}
-       {screen === ScreenState.ABOUT && renderAbout()}
-       {screen === ScreenState.BOOKS && renderBookSelection()}
-       {screen === ScreenState.LEVEL_SELECT && renderLevelSelect()}
-       {screen === ScreenState.GAME && renderGame()}
     </div>
   );
 };
