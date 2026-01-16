@@ -13,11 +13,22 @@
         color-scheme: light;
       }
 
+      /* CRITICAL FIX: Ensure full height for the app container */
+      html, body {
+        height: 100%;
+        width: 100%;
+      }
+
       body {
         background-color: #2c1e16; /* Dark background behind the app container */
         margin: 0;
         font-family: 'Lora', serif;
         overflow: hidden; /* Prevent body scroll, handle inside app */
+      }
+
+      #root {
+        height: 100%;
+        width: 100%;
       }
       
       /* Disable text selection for game feel */
