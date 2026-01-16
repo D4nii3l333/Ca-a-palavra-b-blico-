@@ -119,7 +119,7 @@ const App: React.FC = () => {
         const cloudData = await api.loadData(googleId);
 
         if (cloudData && cloudData.userProfile) {
-          // Existing User - RESTORE DATA
+          // Existing User
           setUserProfile(cloudData.userProfile);
           setUnlockedBookIds(cloudData.unlockedBookIds || []);
           setCompletedLevels(cloudData.completedLevels || []);

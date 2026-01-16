@@ -9,6 +9,15 @@ export default async function handler(req: any, res: any) {
   const sql = neon(process.env.DATABASE_URL);
 
   try {
+    // Ensure table exists (Lazy migration)
+    await sql`
+      CREATE TABLE IF NOT EXISTS player_progress (
+        user_id TEXT PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `;
+
     if (req.method === 'GET') {
       const { userId } = req.query;
       
@@ -28,7 +37,9 @@ export default async function handler(req: any, res: any) {
     } 
     
     else if (req.method === 'POST') {
-      const { userId, data } = req.body;
+      // Handle cases where body might not be parsed
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const { userId, data } = body;
 
       if (!userId || !data) {
         return res.status(400).json({ error: 'Missing userId or data' });
@@ -49,6 +60,6 @@ export default async function handler(req: any, res: any) {
 
   } catch (error) {
     console.error('Database error:', error);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    return res.status(500).json({ error: 'Internal Server Error', details: String(error) });
   }
 }
