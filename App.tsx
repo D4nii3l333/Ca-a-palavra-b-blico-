@@ -6,7 +6,7 @@ import { logEvent } from './utils/analytics';
 import { api, getDeviceId } from './utils/api'; 
 import { useGoogleLogin } from '@react-oauth/google';
 import { WordGrid } from './components/WordGrid';
-import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee, FileText, Download, Upload, Info, MessageSquare, X, Trophy, ExternalLink, Mail, Flame, Ban } from 'lucide-react';
+import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee, FileText, Download, Upload, Info, MessageSquare, X, Trophy, ExternalLink, Mail, Flame, Ban, ChevronUp, ChevronDown } from 'lucide-react';
 
 // --- DATA CONFIGURATION ---
 
@@ -43,6 +43,7 @@ const App: React.FC = () => {
   const [currentLevel, setCurrentLevel] = useState<LevelData | null>(null);
   const [currentLevelIndex, setCurrentLevelIndex] = useState<number>(0);
   const [gameMode, setGameMode] = useState<GameMode>(GameMode.STANDARD);
+  const [isVerseCollapsed, setIsVerseCollapsed] = useState(false); // New state for verse visibility
   
   // Accessibility & Viewport State
   const [interactionMode, setInteractionMode] = useState<'SELECT' | 'PAN'>('SELECT');
@@ -419,6 +420,7 @@ const App: React.FC = () => {
       setCurrentLevel(pendingLevel.level);
       setCurrentLevelIndex(pendingLevel.index);
       setGameMode(mode);
+      setIsVerseCollapsed(false); // Ensure verse is expanded on new game
       
       setViewState({ x: 0, y: 0, scale: mode === GameMode.ACCESSIBLE ? 1.0 : 1.0 });
       setInteractionMode('SELECT');
@@ -527,6 +529,7 @@ const App: React.FC = () => {
           setCurrentLevel(nextLvl);
           setCurrentLevelIndex(nextIndex);
           setViewState({ x: 0, y: 0, scale: gameMode === GameMode.ACCESSIBLE ? 1.0 : 1.0 });
+          setIsVerseCollapsed(false); // Reset collapse state
           logEvent('level_start', { level_id: nextLvl.id, mode: gameMode });
         } catch (e) {
           console.error("Failed to start next level", e);
@@ -1468,17 +1471,34 @@ const App: React.FC = () => {
         {/* Scrollable Content Area */}
         <div className={`flex-1 flex flex-col overflow-hidden ${isAccessible ? 'bg-[#faf6e6]' : 'overflow-y-auto'}`}>
           
-          {/* Verse Text Area */}
-          <div className={`p-6 border-b shadow-sm shrink-0 transition-colors z-20 relative ${isAccessible ? 'bg-[#faf6e6] border-[#e6dcc0]' : 'bg-parchment-100 border-wood/10'}`}>
-             <div className={`
-               leading-relaxed text-center transition-all duration-300
-               ${isAccessible ? 'text-2xl font-serif text-[#2a1a10] font-medium' : 'font-serif text-lg text-wood-darker'}
-             `}>
-                {renderVerseText(currentLevel.text, currentLevel.words)}
+          {/* Verse Text Area - Collapsible */}
+          <div className={`shrink-0 transition-colors z-20 relative ${isAccessible ? 'bg-[#faf6e6] border-[#e6dcc0]' : 'bg-parchment-100 border-wood/10'} border-b shadow-sm`}>
+             <div className={`overflow-hidden transition-all duration-300 ${isVerseCollapsed ? 'max-h-0 opacity-0' : 'max-h-60 opacity-100'}`}>
+               <div className="p-6 pb-2">
+                 <div className={`
+                   leading-relaxed text-center transition-all duration-300
+                   ${isAccessible ? 'text-2xl font-serif text-[#2a1a10] font-medium' : 'font-serif text-lg text-wood-darker'}
+                 `}>
+                    {renderVerseText(currentLevel.text, currentLevel.words)}
+                 </div>
+                 <div className={`mt-4 text-right text-[10px] font-bold uppercase tracking-widest ${isAccessible ? 'text-[#5d4037]/70' : 'text-wood-dark/40'}`}>
+                    Bíblia Almeida Corrigida Fiel (ACF)
+                 </div>
+               </div>
              </div>
-             <div className={`mt-4 text-right text-[10px] font-bold uppercase tracking-widest ${isAccessible ? 'text-[#5d4037]/70' : 'text-wood-dark/40'}`}>
-                Bíblia Almeida Corrigida Fiel (ACF)
-             </div>
+             
+             {/* Toggle Button */}
+             <button 
+               onClick={() => setIsVerseCollapsed(!isVerseCollapsed)}
+               className={`w-full flex items-center justify-center py-1 hover:bg-black/5 transition active:bg-black/10 focus:outline-none`}
+               aria-label={isVerseCollapsed ? "Expandir versículo" : "Minimizar versículo"}
+             >
+               {isVerseCollapsed ? (
+                 <ChevronDown className={`w-5 h-5 ${isAccessible ? 'text-[#5d4037]' : 'text-wood-dark'} opacity-60`} />
+               ) : (
+                 <ChevronUp className={`w-5 h-5 ${isAccessible ? 'text-[#5d4037]' : 'text-wood-dark'} opacity-60`} />
+               )}
+             </button>
           </div>
 
           {/* Word Bank */}
@@ -1580,47 +1600,47 @@ const App: React.FC = () => {
 
   const renderModeSelectionModal = () => {
     if (!pendingLevel) return null;
+
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-parchment-100 rounded-2xl max-w-sm w-full shadow-2xl overflow-hidden border-4 border-wood">
-          <div className="bg-wood p-5 text-center">
-             <h3 className="text-xl font-display font-bold text-parchment-100 tracking-wide">Como deseja jogar?</h3>
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-sm w-full overflow-hidden border-4 border-wood relative">
+          <div className="bg-wood p-4 text-center relative">
+            <h3 className="text-xl font-display font-bold text-parchment-100">Modo de Jogo</h3>
+            <button 
+              onClick={() => setPendingLevel(null)}
+              className="absolute top-1/2 -translate-y-1/2 right-4 text-parchment-100/60 hover:text-white"
+            >
+              <X size={20} />
+            </button>
           </div>
+          
           <div className="p-6 space-y-4">
+            <p className="text-wood-dark text-center mb-4">Como você gostaria de jogar esta fase?</p>
             
-            {/* Standard Mode Option */}
             <button 
               onClick={() => startGameWithMode(GameMode.STANDARD)}
-              className="w-full bg-parchment-200 hover:bg-parchment-300 border-2 border-wood/20 p-4 rounded-xl flex items-center gap-4 transition group"
+              className="w-full bg-parchment-300 hover:bg-parchment-300/80 text-wood-darker font-bold py-4 px-4 rounded-xl shadow-sm border-2 border-wood/20 flex items-center gap-4 transition group"
             >
-              <div className="w-14 h-14 rounded-full bg-wood text-parchment-100 flex items-center justify-center shadow-md group-hover:scale-105 transition">
-                <Scroll className="w-7 h-7" />
+              <div className="bg-wood text-parchment-100 p-2 rounded-lg group-hover:scale-110 transition">
+                <BookOpen size={24} />
               </div>
               <div className="text-left">
-                <span className="block font-bold text-wood-darker text-lg font-display">Clássico</span>
-                <span className="text-xs text-wood-dark font-serif italic">Estética original de pergaminho.</span>
+                <div className="font-display font-bold text-lg">Padrão</div>
+                <div className="text-xs opacity-70 font-normal">Visual clássico de pergaminho</div>
               </div>
             </button>
 
-            {/* Accessible Mode Option */}
             <button 
               onClick={() => startGameWithMode(GameMode.ACCESSIBLE)}
-              className="w-full bg-[#faf6e6] hover:bg-white border-2 border-nature-dark/50 p-4 rounded-xl flex items-center gap-4 transition group shadow-sm"
+              className="w-full bg-[#fdfbf7] hover:bg-white text-[#2a1a10] font-bold py-4 px-4 rounded-xl shadow-sm border-2 border-[#d1c4a0] flex items-center gap-4 transition group"
             >
-              <div className="w-14 h-14 rounded-full bg-nature-dark text-white flex items-center justify-center shadow-md group-hover:scale-105 transition">
-                <Eye className="w-7 h-7" />
+              <div className="bg-nature text-white p-2 rounded-lg group-hover:scale-110 transition">
+                <Eye size={24} />
               </div>
               <div className="text-left">
-                <span className="block font-bold text-[#2a1a10] text-lg font-display">Conforto Visual</span>
-                <span className="text-xs text-[#5d4037] font-serif italic">Alto contraste, zoom e gestos livres.</span>
+                <div className="font-display font-bold text-lg">Acessível</div>
+                <div className="text-xs opacity-70 font-normal">Alto contraste, botões grandes</div>
               </div>
-            </button>
-
-            <button 
-               onClick={() => setPendingLevel(null)}
-               className="w-full py-3 text-wood-dark/60 font-bold hover:text-wood-dark text-sm mt-2 uppercase tracking-widest"
-            >
-              Cancelar
             </button>
           </div>
         </div>
@@ -1630,68 +1650,55 @@ const App: React.FC = () => {
 
   const renderFeedbackModal = () => {
     if (!showFeedbackModal) return null;
+
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-sm w-full overflow-hidden border-2 border-wood relative flex flex-col">
-           <button 
-             onClick={() => setShowFeedbackModal(false)}
-             className="absolute top-2 right-2 text-wood-dark hover:bg-wood/10 p-2 rounded-full"
-           >
-             <X size={20} />
-           </button>
-           <div className="p-5 bg-wood/5 border-b border-wood/10">
-              <h3 className="font-display font-bold text-xl text-wood-darker flex items-center gap-2">
-                 <MessageSquare size={20} /> Feedback
-              </h3>
-           </div>
-           <div className="p-6">
-              <p className="text-sm text-wood-dark mb-4">Encontrou um erro ou tem uma sugestão? Conte para nós.</p>
-              <textarea 
-                className="w-full h-32 p-3 rounded-lg border border-wood/30 bg-white text-wood-darker resize-none focus:outline-none focus:border-wood mb-4 text-sm"
-                placeholder="Descreva aqui..."
-                value={feedbackText}
-                onChange={(e) => setFeedbackText(e.target.value)}
-              />
-              <button 
-                onClick={handleFeedbackSubmit}
-                disabled={!feedbackText.trim()}
-                className="w-full bg-nature hover:bg-nature-dark disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl shadow-md transition"
-              >
-                Enviar Mensagem
-              </button>
-           </div>
-        </div>
-      </div>
-    )
-  };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen w-full flex items-center justify-center bg-wood-darker">
-        <div className="animate-spin text-parchment-200">
-          <Loader2 className="w-12 h-12" />
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full overflow-hidden border-2 border-wood relative">
+          <div className="p-4 bg-wood text-parchment-100 flex justify-between items-center">
+             <h3 className="font-display font-bold text-lg">Feedback</h3>
+             <button onClick={() => setShowFeedbackModal(false)} className="hover:bg-white/10 p-1 rounded-full">
+               <X size={20} />
+             </button>
+          </div>
+          <div className="p-6">
+             <p className="text-wood-dark text-sm mb-4">Encontrou um erro ou tem uma sugestão? Conte-nos!</p>
+             <textarea 
+               value={feedbackText}
+               onChange={(e) => setFeedbackText(e.target.value)}
+               className="w-full bg-white border-2 border-wood/20 rounded-xl p-3 h-32 text-wood-darker resize-none focus:outline-none focus:border-wood"
+               placeholder="Digite sua mensagem aqui..."
+             ></textarea>
+             <div className="mt-4 flex justify-end">
+                <button 
+                  onClick={handleFeedbackSubmit}
+                  className="bg-nature hover:bg-nature-dark text-white font-bold py-2 px-6 rounded-lg shadow-md"
+                >
+                  Enviar
+                </button>
+             </div>
+          </div>
         </div>
       </div>
     );
-  }
+  };
 
   return (
-    <div className="min-h-screen w-full flex justify-center bg-wood-darker text-wood-darker selection:bg-nature selection:text-white">
-      <div className="w-full max-w-lg bg-parchment-200 h-[100dvh] shadow-2xl relative overflow-hidden flex flex-col">
-        {screen === ScreenState.LOGIN && renderLogin()}
-        {screen === ScreenState.MENU && renderMenu()}
-        {screen === ScreenState.PROFILE && renderProfile()}
-        {screen === ScreenState.ABOUT && renderAbout()}
-        {screen === ScreenState.BOOKS && renderBookSelection()}
-        {screen === ScreenState.LEVEL_SELECT && renderLevelSelect()}
-        {screen === ScreenState.GAME && renderGame()}
-        
-        {renderAdModal()}
-        {renderModeSelectionModal()}
-        {renderTermsModal()}
-        {renderFeedbackModal()}
-        {renderAchievementToast()}
-      </div>
+    <div className="h-[100dvh] w-full bg-parchment-200 overflow-hidden font-sans select-none relative">
+       {/* Global Modals */}
+       {renderAdModal()}
+       {renderTermsModal()}
+       {renderAchievementToast()}
+       {renderModeSelectionModal()}
+       {renderFeedbackModal()}
+
+       {/* Screen Routing */}
+       {screen === ScreenState.LOGIN && renderLogin()}
+       {screen === ScreenState.MENU && renderMenu()}
+       {screen === ScreenState.PROFILE && renderProfile()}
+       {screen === ScreenState.ABOUT && renderAbout()}
+       {screen === ScreenState.BOOKS && renderBookSelection()}
+       {screen === ScreenState.LEVEL_SELECT && renderLevelSelect()}
+       {screen === ScreenState.GAME && renderGame()}
     </div>
   );
 };
