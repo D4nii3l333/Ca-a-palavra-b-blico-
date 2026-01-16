@@ -3,7 +3,8 @@ import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, Us
 import { BOOKS } from './constants';
 import { generateGrid, normalizeWord } from './utils/gameLogic';
 import { logEvent } from './utils/analytics';
-import { api, getDeviceId } from './utils/api'; // Integrated new API
+import { api, getDeviceId } from './utils/api'; 
+import { useGoogleLogin } from '@react-oauth/google';
 import { WordGrid } from './components/WordGrid';
 import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee, FileText, Download, Upload, Info, MessageSquare, X, Trophy, ExternalLink, Mail, Flame, Ban } from 'lucide-react';
 
@@ -54,8 +55,11 @@ const App: React.FC = () => {
 
   // User Profile State
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [authUserId, setAuthUserId] = useState<string | null>(null); // Google ID or Device ID
+  
   // Staging area for a user attempting to login but hasn't accepted terms yet
   const [pendingUser, setPendingUser] = useState<UserProfile | null>(null);
+  const [pendingAuthId, setPendingAuthId] = useState<string | null>(null);
 
   // Profile Editing State
   const [tempName, setTempName] = useState('');
@@ -96,21 +100,85 @@ const App: React.FC = () => {
   // Login Loading State
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
+  // --- GOOGLE LOGIN HOOK ---
+  const triggerGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      setIsLoggingIn(true);
+      try {
+        // Fetch user info from Google
+        const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+        }).then(res => res.json());
+
+        const googleId = userInfo.sub;
+        const googleName = userInfo.name || userInfo.given_name || 'Viajante';
+        // Map google name to a simple avatar ID for consistency
+        const avatarId = (googleName.length % AVATARS.length) + 1;
+
+        // Attempt to load existing data for this Google ID
+        const cloudData = await api.loadData(googleId);
+
+        if (cloudData && cloudData.userProfile) {
+          // Existing User
+          setUserProfile(cloudData.userProfile);
+          setUnlockedBookIds(cloudData.unlockedBookIds || []);
+          setCompletedLevels(cloudData.completedLevels || []);
+          setUnlockedAchievementIds(cloudData.unlockedAchievementIds || []);
+          setHintUsageTotal(cloudData.hintUsageCount || 0);
+          setLevelsCompletedTotal(cloudData.levelsCompletedTotal || 0);
+          
+          setAuthUserId(googleId); // Set ID for future saves
+          
+          // Save locally just in case
+          localStorage.setItem('bible_word_search_last_auth_id', googleId);
+          
+          setScreen(ScreenState.MENU);
+          logEvent('login_success', { method: 'google', type: 'returning' });
+        } else {
+          // New User
+          const newUser: UserProfile = {
+            name: googleName,
+            isGuest: false,
+            avatarId: avatarId,
+            termsAccepted: false
+          };
+          setPendingUser(newUser);
+          setPendingAuthId(googleId);
+          setShowTermsModal(true);
+        }
+      } catch (error) {
+        console.error("Google Login Error:", error);
+        alert("Erro ao conectar com Google. Tente novamente.");
+      } finally {
+        setIsLoggingIn(false);
+      }
+    },
+    onError: () => {
+      setIsLoggingIn(false);
+      alert("Falha no login com Google.");
+    }
+  });
+
   // --- INITIALIZATION ---
 
   useEffect(() => {
     // initialize app with data loading
     const init = async () => {
       try {
-        const parsed = await api.loadData();
+        // Check if there was a previous Google session
+        const lastAuthId = localStorage.getItem('bible_word_search_last_auth_id');
+        const data = await api.loadData(lastAuthId || undefined);
         
-        if (parsed && parsed.userProfile) {
-          setUserProfile(parsed.userProfile);
-          setUnlockedBookIds(parsed.unlockedBookIds || []);
-          setCompletedLevels(parsed.completedLevels || []);
-          setUnlockedAchievementIds(parsed.unlockedAchievementIds || []);
-          setHintUsageTotal(parsed.hintUsageCount || 0);
-          setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
+        if (data && data.userProfile) {
+          setUserProfile(data.userProfile);
+          setUnlockedBookIds(data.unlockedBookIds || []);
+          setCompletedLevels(data.completedLevels || []);
+          setUnlockedAchievementIds(data.unlockedAchievementIds || []);
+          setHintUsageTotal(data.hintUsageCount || 0);
+          setLevelsCompletedTotal(data.levelsCompletedTotal || 0);
+          
+          if (lastAuthId) setAuthUserId(lastAuthId);
+          
           setScreen(ScreenState.MENU);
           logEvent('app_open', { user_type: 'returning' });
         } else {
@@ -140,14 +208,15 @@ const App: React.FC = () => {
         levelsCompletedTotal
       };
       
-      // Debounce saving or simple save
+      // Debounce saving
       const timer = setTimeout(() => {
-        api.saveData(saveData);
-      }, 1000);
+        // Save to cloud using authUserId if present, otherwise uses device ID logic inside api
+        api.saveData(saveData, authUserId || undefined);
+      }, 2000);
 
       return () => clearTimeout(timer);
     }
-  }, [userProfile, unlockedBookIds, completedLevels, unlockedAchievementIds, hintUsageTotal, levelsCompletedTotal, isLoading]);
+  }, [userProfile, unlockedBookIds, completedLevels, unlockedAchievementIds, hintUsageTotal, levelsCompletedTotal, isLoading, authUserId]);
 
   // --- GAME LOGIC & ACHIEVEMENTS ---
 
@@ -188,51 +257,6 @@ const App: React.FC = () => {
 
   // --- ACTIONS ---
 
-  const handleGoogleLogin = () => {
-    setIsLoggingIn(true);
-    setTimeout(async () => {
-      // MOCK GOOGLE LOGIN logic - In a real app, you'd get an ID token here
-      // For this persistent demo, we'll simulate a specific user ID
-      const mockUserId = "google_mock_user_v1";
-      
-      try {
-        // Try to load existing google user data
-        const cloudData = await api.loadData(mockUserId);
-        
-        if (cloudData && cloudData.userProfile) {
-           setUserProfile(cloudData.userProfile);
-           setUnlockedBookIds(cloudData.unlockedBookIds);
-           setCompletedLevels(cloudData.completedLevels);
-           setUnlockedAchievementIds(cloudData.unlockedAchievementIds);
-           setScreen(ScreenState.MENU);
-        } else {
-           // New Google User
-           const mockUser: UserProfile = { 
-             name: 'Viajante Bíblico', 
-             isGuest: false,
-             avatarId: Math.floor(Math.random() * AVATARS.length) + 1,
-             termsAccepted: false
-           };
-           setPendingUser(mockUser);
-           setShowTermsModal(true);
-        }
-      } catch (e) {
-        console.error("Login error", e);
-        // Fallback new user
-        const mockUser: UserProfile = { 
-             name: 'Viajante Bíblico', 
-             isGuest: false,
-             avatarId: Math.floor(Math.random() * AVATARS.length) + 1,
-             termsAccepted: false
-        };
-        setPendingUser(mockUser);
-        setShowTermsModal(true);
-      } finally {
-        setIsLoggingIn(false);
-      }
-    }, 1500);
-  };
-
   const handleGuestLogin = () => {
     const guestUser: UserProfile = { 
       name: 'Visitante', 
@@ -242,18 +266,26 @@ const App: React.FC = () => {
     };
     
     setPendingUser(guestUser);
+    setPendingAuthId(null); // Guest mode uses auto-generated device ID
     setShowTermsModal(true);
   };
 
   const handleTermsAgreement = () => {
     if (pendingUser) {
       const confirmedUser = { ...pendingUser, termsAccepted: true };
+      
       setUserProfile(confirmedUser);
+      if (pendingAuthId) {
+        setAuthUserId(pendingAuthId);
+        localStorage.setItem('bible_word_search_last_auth_id', pendingAuthId);
+      }
+      
       setPendingUser(null);
+      setPendingAuthId(null);
       setShowTermsModal(false);
       setScreen(ScreenState.MENU);
       
-      // Initial Save to ensure DB record exists
+      // Initial Save to ensure DB record exists immediately
       const initialSave: SaveData = {
         userProfile: confirmedUser,
         unlockedBookIds: ['2john', 'matthew', 'john', 'genesis'],
@@ -263,8 +295,7 @@ const App: React.FC = () => {
         levelsCompletedTotal: 0
       };
       
-      const specificId = confirmedUser.isGuest ? undefined : "google_mock_user_v1";
-      api.saveData(initialSave, specificId);
+      api.saveData(initialSave, pendingAuthId || undefined);
 
       logEvent('login_success', { method: confirmedUser.isGuest ? 'guest' : 'google', terms_accepted: true });
     } else {
@@ -274,14 +305,16 @@ const App: React.FC = () => {
 
   const handleTermsRejection = () => {
     setPendingUser(null);
+    setPendingAuthId(null);
     setShowTermsModal(false);
     logEvent('login_terms_rejected');
   };
 
   const handleLogout = () => {
     localStorage.removeItem('bible_word_search_save_v1');
-    localStorage.removeItem('bible_word_search_device_id');
+    localStorage.removeItem('bible_word_search_last_auth_id'); // Clear auth persistence
     setUserProfile(null);
+    setAuthUserId(null);
     setScreen(ScreenState.LOGIN);
     setCompletedLevels([]);
     setUnlockedBookIds(['2john', 'matthew', 'john', 'genesis']);
@@ -290,28 +323,8 @@ const App: React.FC = () => {
   };
 
   const handleSwitchOrLinkAccount = () => {
-    setIsLoggingIn(true);
-    setTimeout(() => {
-      const isUpgrade = userProfile?.isGuest;
-      const newUser: UserProfile = { 
-        name: isUpgrade ? userProfile.name : 'Novo Usuário Google', 
-        isGuest: false,
-        avatarId: isUpgrade ? userProfile.avatarId : Math.floor(Math.random() * AVATARS.length) + 1,
-        termsAccepted: true 
-      };
-      
-      if (isUpgrade && userProfile?.termsAccepted) {
-         setUserProfile(newUser);
-         setIsLoggingIn(false);
-         setScreen(ScreenState.MENU);
-      } else {
-         setPendingUser(newUser);
-         setIsLoggingIn(false);
-         setShowTermsModal(true);
-      }
-      
-      logEvent('account_switch');
-    }, 1500);
+    // If guest wants to switch, we trigger google login
+    triggerGoogleLogin();
   };
 
   const handleExportProgress = () => {
@@ -352,7 +365,7 @@ const App: React.FC = () => {
               alert("Progresso importado com sucesso!");
               
               // Sync imported data to cloud immediately
-              api.saveData(parsed);
+              api.saveData(parsed, authUserId || undefined);
               
               logEvent('progress_import_success');
             } else {
@@ -824,7 +837,7 @@ const App: React.FC = () => {
         ) : (
           <>
             <button 
-              onClick={handleGoogleLogin}
+              onClick={() => triggerGoogleLogin()}
               className="w-full bg-white hover:bg-gray-50 text-gray-700 font-bold py-3.5 px-6 rounded-xl shadow-md transform transition active:scale-95 flex items-center justify-center text-base border border-gray-300"
             >
               <div className="mr-3 w-5 h-5 relative flex items-center justify-center">
@@ -862,9 +875,6 @@ const App: React.FC = () => {
     </div>
   );
 
-  // ... (Rest of component renders stay exactly the same to preserve layout)
-  // Re-including all original render methods below for completeness in this file update
-
   const renderTermsModal = () => {
     if (!showTermsModal) return null;
     
@@ -892,7 +902,7 @@ const App: React.FC = () => {
               <h4 className="font-bold text-base mt-6">2. Política de Privacidade</h4>
               <p>Respeitamos a sua privacidade. Este aplicativo não coleta dados pessoais identificáveis sem o seu consentimento explícito.</p>
               <ul className="list-disc pl-5 space-y-1">
-                 <li><strong>Dados de Progresso:</strong> Seus progressos (fases, conquistas) são salvos localmente no seu dispositivo e na nuvem para backup.</li>
+                 <li><strong>Dados de Progresso:</strong> Seus progressos (fases, conquistas) são salvos localmente no seu dispositivo e na nuvem (se logado com Google) para backup.</li>
                  <li><strong>Analytics:</strong> Coletamos dados anônimos de uso (fases jogadas, cliques) para melhorar a experiência do usuário.</li>
               </ul>
               <p>Não vendemos nem compartilhamos seus dados com terceiros para fins comerciais.</p>
