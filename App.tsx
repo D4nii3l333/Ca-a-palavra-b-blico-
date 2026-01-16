@@ -823,7 +823,7 @@ const App: React.FC = () => {
       </div>
 
       <div className="pb-6 text-center opacity-60 relative z-10 shrink-0">
-        <p className="text-xs text-wood-dark font-bold mb-2">Tradução: Bíblia Almeida Corrigida Fiel (ACF)</p>
+        <p className="text-xs text-wood-dark font-bold mb-2">Tradução: JFA (Domínio Público)</p>
         <button onClick={() => setShowTermsModal(true)} className="text-[10px] text-wood-dark max-w-[250px] mx-auto leading-relaxed opacity-80 hover:underline">
           Ao continuar, você concorda com nossos Termos de Serviço e Política de Privacidade.
         </button>
@@ -853,7 +853,7 @@ const App: React.FC = () => {
            <div className="p-6 overflow-y-auto text-wood-dark text-sm leading-relaxed space-y-4">
               <h4 className="font-bold text-base">1. Termos de Uso</h4>
               <p>Bem-vindo ao Caça-Palavras Bíblico. Ao usar este aplicativo, você concorda em utilizá-lo para fins de entretenimento e aprendizado pessoal.</p>
-              <p>O conteúdo bíblico é extraído da versão Almeida Corrigida Fiel (ACF). Reservamo-nos o direito de atualizar o conteúdo e as funcionalidades a qualquer momento.</p>
+              <p>O conteúdo bíblico é baseado na tradução de João Ferreira de Almeida (século XIX), obra em domínio público. Linguagem modernizada pelo autor do aplicativo. Reservamo-nos o direito de atualizar o conteúdo e as funcionalidades a qualquer momento.</p>
               
               <h4 className="font-bold text-base mt-6">2. Política de Privacidade</h4>
               <p>Respeitamos a sua privacidade. Este aplicativo não coleta dados pessoais identificáveis sem o seu consentimento explícito.</p>
@@ -946,7 +946,7 @@ const App: React.FC = () => {
          </button>
          <div className="text-wood/60 text-sm italic text-center">
             <p className="mb-2">"Lâmpada para os meus pés..."</p>
-            <p className="text-[10px] uppercase tracking-wider opacity-70">Almeida Corrigida Fiel (ACF)</p>
+            <p className="text-[10px] uppercase tracking-wider opacity-70">JFA (Domínio Público)</p>
          </div>
          <div className="w-10"></div>{/* Spacer to center the quote somewhat */}
       </div>
@@ -1119,8 +1119,7 @@ const App: React.FC = () => {
             <h3 className="font-bold text-lg border-b border-wood/20 pb-2">Créditos</h3>
             <p className="text-sm">
                <strong>Texto Bíblico:</strong><br/>
-               Bíblia Almeida Corrigida Fiel (ACF)<br/>
-               <span className="text-xs opacity-70">Fielmente baseada no Texto Massorético (VT) e no Textus Receptus (NT).</span>
+               Texto bíblico baseado na tradução de João Ferreira de Almeida (século XIX), obra em domínio público. Linguagem modernizada pelo autor do aplicativo.
             </p>
             <p className="text-sm">
                <strong>Design & Desenvolvimento:</strong><br/>
@@ -1282,7 +1281,7 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="mt-8 text-center opacity-40 text-xs font-serif pb-4">
-             Todas as referências baseadas na Bíblia Almeida Corrigida Fiel (ACF)
+             Todas as referências baseadas na Bíblia Almeida (JFA)
           </div>
         </div>
       </div>
@@ -1372,7 +1371,7 @@ const App: React.FC = () => {
           )}
 
           <div className="mt-8 text-center opacity-50 text-xs font-serif pb-4 text-wood-dark">
-             Texto Bíblico: Almeida Corrigida Fiel (ACF)
+             Texto Bíblico: JFA (Domínio Público)
           </div>
         </div>
       </div>
@@ -1429,7 +1428,7 @@ const App: React.FC = () => {
           </button>
           
           <div className="font-display text-lg font-bold flex items-center gap-2">
-             <span className="bg-wood-dark px-2 py-0.5 rounded text-sm text-parchment-200">ACF</span>
+             <span className="bg-wood-dark px-2 py-0.5 rounded text-sm text-parchment-200">JFA</span>
              {currentLevel.reference}
           </div>
           
@@ -1482,7 +1481,7 @@ const App: React.FC = () => {
                     {renderVerseText(currentLevel.text, currentLevel.words)}
                  </div>
                  <div className={`mt-4 text-right text-[10px] font-bold uppercase tracking-widest ${isAccessible ? 'text-[#5d4037]/70' : 'text-wood-dark/40'}`}>
-                    Bíblia Almeida Corrigida Fiel (ACF)
+                    JFA (Domínio Público)
                  </div>
                </div>
              </div>
