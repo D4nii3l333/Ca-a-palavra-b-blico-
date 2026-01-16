@@ -3,6 +3,7 @@ import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, Us
 import { BOOKS } from './constants';
 import { generateGrid, normalizeWord } from './utils/gameLogic';
 import { logEvent } from './utils/analytics';
+import { api, getDeviceId } from './utils/api'; // Integrated new API
 import { WordGrid } from './components/WordGrid';
 import { Lock, BookOpen, Play, ChevronLeft, Award, Calendar, Lightbulb, Star, Unlock, MonitorPlay, Hammer, Scroll, User, LogIn, Loader2, Edit3, Camera, LogOut, Save, RefreshCw, Check, ZoomIn, Hand, MousePointer2, Eye, Minimize2, Maximize2, Coffee, FileText, Download, Upload, Info, MessageSquare, X, Trophy, ExternalLink, Mail, Flame, Ban } from 'lucide-react';
 
@@ -98,44 +99,38 @@ const App: React.FC = () => {
   // --- INITIALIZATION ---
 
   useEffect(() => {
-    // Check local storage for existing user directly (Synchronous safety + Timeout for visual)
-    const storedData = localStorage.getItem('bible_word_search_save_v1');
-    
-    // Artificial delay to ensure fonts/assets might be ready and show splash
-    const timer = setTimeout(() => {
-      if (storedData) {
-        try {
-          const parsed: SaveData = JSON.parse(storedData);
-          if (parsed.userProfile) {
-            setUserProfile(parsed.userProfile);
-            setUnlockedBookIds(parsed.unlockedBookIds || []);
-            setCompletedLevels(parsed.completedLevels || []);
-            setUnlockedAchievementIds(parsed.unlockedAchievementIds || []);
-            setHintUsageTotal(parsed.hintUsageCount || 0);
-            setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
-            setScreen(ScreenState.MENU);
-            logEvent('app_open', { user_type: 'returning' });
-          } else {
-            setScreen(ScreenState.LOGIN);
-            logEvent('app_open', { user_type: 'new_or_cleared' });
-          }
-        } catch (e) {
-          console.error("Save data corrupted", e);
+    // initialize app with data loading
+    const init = async () => {
+      try {
+        const parsed = await api.loadData();
+        
+        if (parsed && parsed.userProfile) {
+          setUserProfile(parsed.userProfile);
+          setUnlockedBookIds(parsed.unlockedBookIds || []);
+          setCompletedLevels(parsed.completedLevels || []);
+          setUnlockedAchievementIds(parsed.unlockedAchievementIds || []);
+          setHintUsageTotal(parsed.hintUsageCount || 0);
+          setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
+          setScreen(ScreenState.MENU);
+          logEvent('app_open', { user_type: 'returning' });
+        } else {
           setScreen(ScreenState.LOGIN);
+          logEvent('app_open', { user_type: 'new_or_cleared' });
         }
-      } else {
-        setScreen(ScreenState.LOGIN);
-        logEvent('app_open', { user_type: 'first_time' });
+      } catch (e) {
+        console.error("Initialization error:", e);
+        setScreen(ScreenState.LOGIN); // Fallback to login on critical error
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
-    }, 1000);
+    };
 
-    return () => clearTimeout(timer);
+    init();
   }, []);
 
   // Save on significant state changes
   useEffect(() => {
-    if (userProfile) {
+    if (userProfile && !isLoading) {
       const saveData: SaveData = {
         userProfile,
         unlockedBookIds,
@@ -144,13 +139,15 @@ const App: React.FC = () => {
         hintUsageCount: hintUsageTotal,
         levelsCompletedTotal
       };
-      try {
-        localStorage.setItem('bible_word_search_save_v1', JSON.stringify(saveData));
-      } catch (e) {
-        console.error("Error saving data", e);
-      }
+      
+      // Debounce saving or simple save
+      const timer = setTimeout(() => {
+        api.saveData(saveData);
+      }, 1000);
+
+      return () => clearTimeout(timer);
     }
-  }, [userProfile, unlockedBookIds, completedLevels, unlockedAchievementIds, hintUsageTotal, levelsCompletedTotal]);
+  }, [userProfile, unlockedBookIds, completedLevels, unlockedAchievementIds, hintUsageTotal, levelsCompletedTotal, isLoading]);
 
   // --- GAME LOGIC & ACHIEVEMENTS ---
 
@@ -193,17 +190,46 @@ const App: React.FC = () => {
 
   const handleGoogleLogin = () => {
     setIsLoggingIn(true);
-    setTimeout(() => {
-      const mockUser: UserProfile = { 
-        name: 'Viajante Bíblico', 
-        isGuest: false,
-        avatarId: Math.floor(Math.random() * AVATARS.length) + 1,
-        termsAccepted: false
-      };
+    setTimeout(async () => {
+      // MOCK GOOGLE LOGIN logic - In a real app, you'd get an ID token here
+      // For this persistent demo, we'll simulate a specific user ID
+      const mockUserId = "google_mock_user_v1";
       
-      setPendingUser(mockUser);
-      setIsLoggingIn(false);
-      setShowTermsModal(true);
+      try {
+        // Try to load existing google user data
+        const cloudData = await api.loadData(mockUserId);
+        
+        if (cloudData && cloudData.userProfile) {
+           setUserProfile(cloudData.userProfile);
+           setUnlockedBookIds(cloudData.unlockedBookIds);
+           setCompletedLevels(cloudData.completedLevels);
+           setUnlockedAchievementIds(cloudData.unlockedAchievementIds);
+           setScreen(ScreenState.MENU);
+        } else {
+           // New Google User
+           const mockUser: UserProfile = { 
+             name: 'Viajante Bíblico', 
+             isGuest: false,
+             avatarId: Math.floor(Math.random() * AVATARS.length) + 1,
+             termsAccepted: false
+           };
+           setPendingUser(mockUser);
+           setShowTermsModal(true);
+        }
+      } catch (e) {
+        console.error("Login error", e);
+        // Fallback new user
+        const mockUser: UserProfile = { 
+             name: 'Viajante Bíblico', 
+             isGuest: false,
+             avatarId: Math.floor(Math.random() * AVATARS.length) + 1,
+             termsAccepted: false
+        };
+        setPendingUser(mockUser);
+        setShowTermsModal(true);
+      } finally {
+        setIsLoggingIn(false);
+      }
     }, 1500);
   };
 
@@ -226,6 +252,20 @@ const App: React.FC = () => {
       setPendingUser(null);
       setShowTermsModal(false);
       setScreen(ScreenState.MENU);
+      
+      // Initial Save to ensure DB record exists
+      const initialSave: SaveData = {
+        userProfile: confirmedUser,
+        unlockedBookIds: ['2john', 'matthew', 'john', 'genesis'],
+        completedLevels: [],
+        unlockedAchievementIds: [],
+        hintUsageCount: 0,
+        levelsCompletedTotal: 0
+      };
+      
+      const specificId = confirmedUser.isGuest ? undefined : "google_mock_user_v1";
+      api.saveData(initialSave, specificId);
+
       logEvent('login_success', { method: confirmedUser.isGuest ? 'guest' : 'google', terms_accepted: true });
     } else {
       setShowTermsModal(false);
@@ -239,9 +279,8 @@ const App: React.FC = () => {
   };
 
   const handleLogout = () => {
-    try {
-      localStorage.removeItem('bible_word_search_save_v1');
-    } catch (e) { console.error(e); }
+    localStorage.removeItem('bible_word_search_save_v1');
+    localStorage.removeItem('bible_word_search_device_id');
     setUserProfile(null);
     setScreen(ScreenState.LOGIN);
     setCompletedLevels([]);
@@ -311,6 +350,10 @@ const App: React.FC = () => {
               setHintUsageTotal(parsed.hintUsageCount || 0);
               setLevelsCompletedTotal(parsed.levelsCompletedTotal || 0);
               alert("Progresso importado com sucesso!");
+              
+              // Sync imported data to cloud immediately
+              api.saveData(parsed);
+              
               logEvent('progress_import_success');
             } else {
               throw new Error("Invalid structure");
@@ -819,6 +862,74 @@ const App: React.FC = () => {
     </div>
   );
 
+  // ... (Rest of component renders stay exactly the same to preserve layout)
+  // Re-including all original render methods below for completeness in this file update
+
+  const renderTermsModal = () => {
+    if (!showTermsModal) return null;
+    
+    const isLoginFlow = !!pendingUser;
+
+    return (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full h-[80vh] overflow-hidden border-2 border-wood relative flex flex-col">
+           <div className="p-4 border-b border-wood/20 flex justify-between items-center bg-wood/5">
+              <h3 className="font-display font-bold text-lg text-wood-darker">Termos & Privacidade</h3>
+              {!isLoginFlow && (
+                <button 
+                  onClick={() => setShowTermsModal(false)}
+                  className="text-wood-dark hover:bg-wood/10 p-1 rounded-full"
+                >
+                  <X size={20} />
+                </button>
+              )}
+           </div>
+           <div className="p-6 overflow-y-auto text-wood-dark text-sm leading-relaxed space-y-4">
+              <h4 className="font-bold text-base">1. Termos de Uso</h4>
+              <p>Bem-vindo ao Caça-Palavras Bíblico. Ao usar este aplicativo, você concorda em utilizá-lo para fins de entretenimento e aprendizado pessoal.</p>
+              <p>O conteúdo bíblico é extraído da versão Almeida Corrigida Fiel (ACF). Reservamo-nos o direito de atualizar o conteúdo e as funcionalidades a qualquer momento.</p>
+              
+              <h4 className="font-bold text-base mt-6">2. Política de Privacidade</h4>
+              <p>Respeitamos a sua privacidade. Este aplicativo não coleta dados pessoais identificáveis sem o seu consentimento explícito.</p>
+              <ul className="list-disc pl-5 space-y-1">
+                 <li><strong>Dados de Progresso:</strong> Seus progressos (fases, conquistas) são salvos localmente no seu dispositivo e na nuvem para backup.</li>
+                 <li><strong>Analytics:</strong> Coletamos dados anônimos de uso (fases jogadas, cliques) para melhorar a experiência do usuário.</li>
+              </ul>
+              <p>Não vendemos nem compartilhamos seus dados com terceiros para fins comerciais.</p>
+              
+              <h4 className="font-bold text-base mt-6">3. Contato</h4>
+              <p>Para dúvidas sobre estes termos, utilize a opção de Feedback no aplicativo.</p>
+           </div>
+           <div className="p-4 border-t border-wood/20 bg-wood/5 flex flex-col gap-3">
+              {isLoginFlow ? (
+                <>
+                  <button 
+                    onClick={handleTermsAgreement}
+                    className="w-full bg-nature hover:bg-nature-dark text-white font-bold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                  >
+                    <Check size={18} /> Concordo e Continuar
+                  </button>
+                  <button 
+                    onClick={handleTermsRejection}
+                    className="w-full bg-transparent hover:bg-red-100 text-red-800 font-bold py-2 rounded-xl shadow-sm border border-red-200 transition flex items-center justify-center gap-2"
+                  >
+                    <Ban size={18} /> Não Concordo
+                  </button>
+                </>
+              ) : (
+                <button 
+                  onClick={() => setShowTermsModal(false)}
+                  className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-bold py-3 rounded-xl shadow-md transition"
+                >
+                  Entendi
+                </button>
+              )}
+           </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderMenu = () => (
     <div className="flex flex-col items-center justify-center h-full space-y-8 animate-fade-in px-6 relative">
       <button 
@@ -875,71 +986,6 @@ const App: React.FC = () => {
       </div>
     </div>
   );
-
-  const renderTermsModal = () => {
-    if (!showTermsModal) return null;
-    
-    const isLoginFlow = !!pendingUser;
-
-    return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full h-[80vh] overflow-hidden border-2 border-wood relative flex flex-col">
-           <div className="p-4 border-b border-wood/20 flex justify-between items-center bg-wood/5">
-              <h3 className="font-display font-bold text-lg text-wood-darker">Termos & Privacidade</h3>
-              {!isLoginFlow && (
-                <button 
-                  onClick={() => setShowTermsModal(false)}
-                  className="text-wood-dark hover:bg-wood/10 p-1 rounded-full"
-                >
-                  <X size={20} />
-                </button>
-              )}
-           </div>
-           <div className="p-6 overflow-y-auto text-wood-dark text-sm leading-relaxed space-y-4">
-              <h4 className="font-bold text-base">1. Termos de Uso</h4>
-              <p>Bem-vindo ao Caça-Palavras Bíblico. Ao usar este aplicativo, você concorda em utilizá-lo para fins de entretenimento e aprendizado pessoal.</p>
-              <p>O conteúdo bíblico é extraído da versão Almeida Corrigida Fiel (ACF). Reservamo-nos o direito de atualizar o conteúdo e as funcionalidades a qualquer momento.</p>
-              
-              <h4 className="font-bold text-base mt-6">2. Política de Privacidade</h4>
-              <p>Respeitamos a sua privacidade. Este aplicativo não coleta dados pessoais identificáveis sem o seu consentimento explícito.</p>
-              <ul className="list-disc pl-5 space-y-1">
-                 <li><strong>Dados de Progresso:</strong> Seus progressos (fases, conquistas) são salvos localmente no seu dispositivo.</li>
-                 <li><strong>Analytics:</strong> Coletamos dados anônimos de uso (fases jogadas, cliques) para melhorar a experiência do usuário.</li>
-              </ul>
-              <p>Não vendemos nem compartilhamos seus dados com terceiros para fins comerciais.</p>
-              
-              <h4 className="font-bold text-base mt-6">3. Contato</h4>
-              <p>Para dúvidas sobre estes termos, utilize a opção de Feedback no aplicativo.</p>
-           </div>
-           <div className="p-4 border-t border-wood/20 bg-wood/5 flex flex-col gap-3">
-              {isLoginFlow ? (
-                <>
-                  <button 
-                    onClick={handleTermsAgreement}
-                    className="w-full bg-nature hover:bg-nature-dark text-white font-bold py-3 rounded-xl shadow-md transition flex items-center justify-center gap-2"
-                  >
-                    <Check size={18} /> Concordo e Continuar
-                  </button>
-                  <button 
-                    onClick={handleTermsRejection}
-                    className="w-full bg-transparent hover:bg-red-100 text-red-800 font-bold py-2 rounded-xl shadow-sm border border-red-200 transition flex items-center justify-center gap-2"
-                  >
-                    <Ban size={18} /> Não Concordo
-                  </button>
-                </>
-              ) : (
-                <button 
-                  onClick={() => setShowTermsModal(false)}
-                  className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-bold py-3 rounded-xl shadow-md transition"
-                >
-                  Entendi
-                </button>
-              )}
-           </div>
-        </div>
-      </div>
-    );
-  };
 
   const renderProfile = () => (
     <div className="flex flex-col h-full animate-fade-in bg-parchment-200">
