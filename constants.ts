@@ -1,6 +1,8 @@
 
 import { BookData } from './types';
 
+export const GOOGLE_CLIENT_ID = "50465070158-34ida30512taajje51kdu57hlm64dh8k.apps.googleusercontent.com";
+
 export const BOOKS: BookData[] = [
   // --- NOVO TESTAMENTO ---
   { 

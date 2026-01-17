@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, UserProfile, GameMode, Achievement, SaveData } from './types';
-import { BOOKS } from './constants';
+import { BOOKS, GOOGLE_CLIENT_ID } from './constants';
 import { generateGrid, normalizeWord } from './utils/gameLogic';
 import { logEvent } from './utils/analytics';
 import { api, getDeviceId } from './utils/api'; 
@@ -101,14 +101,12 @@ const App: React.FC = () => {
   // Login Loading State
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  // --- GOOGLE LOGIN HOOK ---
-  const triggerGoogleLogin = useGoogleLogin({
-    onSuccess: async (tokenResponse) => {
+  const handleLoginSuccess = async (accessToken: string) => {
       setIsLoggingIn(true);
       try {
         // Fetch user info from Google
         const userInfo = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-          headers: { Authorization: `Bearer ${tokenResponse.access_token}` },
+          headers: { Authorization: `Bearer ${accessToken}` },
         }).then(res => res.json());
 
         const googleId = userInfo.sub;
@@ -153,6 +151,44 @@ const App: React.FC = () => {
       } finally {
         setIsLoggingIn(false);
       }
+  };
+
+  // --- MANUAL LOGIN FLOW FOR APK/WEBVIEW ---
+  // This handles the return from an external browser login
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash && hash.includes('access_token')) {
+      const params = new URLSearchParams(hash.replace('#', ''));
+      const accessToken = params.get('access_token');
+      
+      if (accessToken) {
+        // Clear the hash to prevent re-processing or leaking token in UI
+        window.history.replaceState(null, null, ' ');
+        handleLoginSuccess(accessToken);
+      }
+    }
+  }, []);
+
+  const handleExternalLogin = () => {
+    // Construct the standard Google OAuth 2.0 Implicit Flow URL
+    // This allows us to open it via window.open(url, '_system') which forces 
+    // WebViews (like Median/GoNative) to open the system browser.
+    
+    const redirectUri = window.location.origin; // e.g. https://your-app.vercel.app
+    const scope = 'https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${GOOGLE_CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=token&scope=${encodeURIComponent(scope)}&include_granted_scopes=true&state=pass-through-value`;
+
+    // '_system' is the Cordova/WebView convention to open in external browser
+    // '_blank' is standard for new tab. 
+    // We try both approaches by using window.open.
+    window.open(authUrl, '_system'); 
+  };
+
+
+  // --- GOOGLE LOGIN HOOK (STANDARD WEB) ---
+  const triggerGoogleLogin = useGoogleLogin({
+    onSuccess: async (tokenResponse) => {
+      handleLoginSuccess(tokenResponse.access_token);
     },
     onError: () => {
       setIsLoggingIn(false);
@@ -327,8 +363,8 @@ const App: React.FC = () => {
   };
 
   const handleSwitchOrLinkAccount = () => {
-    // If guest wants to switch, we trigger google login
-    triggerGoogleLogin();
+    // If guest wants to switch, we trigger google login manual flow
+    handleExternalLogin();
   };
 
   const handleFeedbackSubmit = () => {
@@ -792,7 +828,7 @@ const App: React.FC = () => {
           ) : (
             <>
               <button 
-                onClick={() => triggerGoogleLogin()}
+                onClick={handleExternalLogin}
                 className="w-full bg-white hover:bg-gray-50 text-gray-700 font-bold py-3.5 px-6 rounded-xl shadow-md transform transition active:scale-95 flex items-center justify-center text-base border border-gray-300"
               >
                 <div className="mr-3 w-5 h-5 relative flex items-center justify-center">
