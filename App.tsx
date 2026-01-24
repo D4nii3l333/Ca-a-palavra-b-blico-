@@ -983,14 +983,6 @@ const App: React.FC = () => {
         >
           <Play className="mr-3 w-6 h-6" /> JOGAR
         </button>
-
-        <button disabled className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-serif font-bold py-3 px-6 rounded-xl shadow opacity-80 cursor-not-allowed flex items-center justify-center border-b-4 border-wood-dark">
-          <Calendar className="mr-3 w-5 h-5" /> DIÁRIOS
-        </button>
-
-        <button disabled className="w-full bg-blue-600 hover:bg-blue-700 text-white font-serif font-bold py-3 px-6 rounded-xl shadow opacity-80 cursor-not-allowed flex items-center justify-center border-b-4 border-blue-800">
-          <Award className="mr-3 w-5 h-5" /> DESAFIOS BÍBLICOS
-        </button>
       </div>
       
       <div className="mt-auto w-full flex flex-col items-center pb-4 px-2 gap-3">
