@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { ScreenState, BookData, LevelData, WordConfig, GridState, Coordinate, UserProfile, GameMode, Achievement, SaveData } from './types';
 import { BOOKS, GOOGLE_CLIENT_ID } from './constants';
@@ -874,7 +875,7 @@ const App: React.FC = () => {
 
     return (
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full h-[80vh] overflow-hidden border-2 border-wood relative flex flex-col">
+        <div className="bg-parchment-100 rounded-xl shadow-2xl max-w-md w-full h-[85vh] overflow-hidden border-2 border-wood relative flex flex-col">
            <div className="p-4 border-b border-wood/20 flex justify-between items-center bg-wood/5">
               <h3 className="font-display font-bold text-lg text-wood-darker">Termos & Privacidade</h3>
               {!isLoginFlow && (
@@ -886,23 +887,42 @@ const App: React.FC = () => {
                 </button>
               )}
            </div>
-           <div className="p-6 overflow-y-auto text-wood-dark text-sm leading-relaxed space-y-4">
-              <h4 className="font-bold text-base">1. Termos de Uso</h4>
-              <p>Bem-vindo ao Caça-Palavras Bíblico. Ao usar este aplicativo, você concorda em utilizá-lo para fins de entretenimento e aprendizado pessoal.</p>
-              <p>O conteúdo bíblico é baseado na tradução de João Ferreira de Almeida (século XIX), obra em domínio público. Linguagem modernizada pelo autor do aplicativo. Reservamo-nos o direito de atualizar o conteúdo e as funcionalidades a qualquer momento.</p>
-              
-              <h4 className="font-bold text-base mt-6">2. Política de Privacidade</h4>
-              <p>Respeitamos a sua privacidade. Este aplicativo não coleta dados pessoais identificáveis sem o seu consentimento explícito.</p>
-              <ul className="list-disc pl-5 space-y-1">
-                 <li><strong>Dados de Progresso:</strong> Seus progressos (fases, conquistas) são salvos localmente no seu dispositivo e na nuvem (se logado com Google) para backup.</li>
-                 <li><strong>Analytics:</strong> Coletamos dados anônimos de uso (fases jogadas, cliques) para melhorar a experiência do usuário.</li>
-              </ul>
-              <p>Não vendemos nem compartilhamos seus dados com terceiros para fins comerciais.</p>
-              
-              <h4 className="font-bold text-base mt-6">3. Contato</h4>
-              <p>Para dúvidas sobre estes termos, utilize a opção de Feedback no aplicativo.</p>
+           <div className="p-6 overflow-y-auto text-wood-dark text-sm leading-relaxed space-y-6">
+              <div>
+                <h3 className="font-display font-bold text-xl text-center mb-4 text-wood-darker">Política de Privacidade</h3>
+                
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2">1. Coleta e Uso de Dados</h4>
+                <p>Este aplicativo respeita sua privacidade. Não coletamos informações pessoais identificáveis (como nome, endereço ou telefone) de forma obrigatória. Dados de login (Google) são utilizados apenas para salvar seu progresso na nuvem.</p>
+                <p className="mt-2">Coletamos dados anônimos de uso e progresso para melhorar a experiência do jogo e corrigir erros.</p>
+
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2 mt-4">2. Publicidade e Google AdSense</h4>
+                <p>Utilizamos o Google AdSense para exibir anúncios. O Google, como fornecedor terceirizado, utiliza cookies para exibir anúncios com base nas suas visitas anteriores a este site ou a outros sites na Internet.</p>
+                
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2 mt-4">3. Cookies</h4>
+                <p>O uso de cookies de publicidade permite que o Google e seus parceiros veiculem anúncios aos usuários com base em suas visitas aos seus sites e/ou a outros sites na Internet.</p>
+                <p className="mt-2">Você pode optar por desativar a publicidade personalizada acessando as <a href="https://www.google.com/settings/ads" target="_blank" rel="noopener noreferrer" className="text-nature-dark underline font-bold">Configurações de Anúncios</a>.</p>
+
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2 mt-4">4. Público Infantil e Familiar</h4>
+                <p>Nosso conteúdo é projetado para ser seguro para todas as idades, focado em aprendizado bíblico. Não coletamos intencionalmente dados pessoais de crianças. Recomendamos que pais ou responsáveis supervisionem o uso de aplicativos por menores.</p>
+              </div>
+
+              <div className="w-full h-px bg-wood/20 my-4"></div>
+
+              <div>
+                <h3 className="font-display font-bold text-xl text-center mb-4 text-wood-darker">Termos de Uso</h3>
+                
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2">1. Aceitação e Uso</h4>
+                <p>Ao utilizar o Caça-Palavras Bíblico, você concorda com estes termos. O uso é gratuito e destinado exclusivamente a fins educacionais, de entretenimento e edificação pessoal.</p>
+                
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2 mt-4">2. Conteúdo Educacional</h4>
+                <p>O objetivo deste jogo é auxiliar na memorização e familiarização com textos bíblicos. As referências seguem a tradução João Ferreira de Almeida (Domínio Público), podendo conter adaptações para a mecânica do jogo.</p>
+                
+                <h4 className="font-bold text-base border-b border-wood/20 pb-1 mb-2 mt-4">3. Isenção de Responsabilidade</h4>
+                <p>O software é fornecido "como está". Não garantimos que o funcionamento será ininterrupto ou livre de erros. Reservamo-nos o direito de alterar funcionalidades ou descontinuar o serviço a qualquer momento sem aviso prévio.</p>
+              </div>
            </div>
-           <div className="p-4 border-t border-wood/20 bg-wood/5 flex flex-col gap-3">
+           
+           <div className="p-4 border-t border-wood/20 bg-wood/5 flex flex-col gap-3 shrink-0">
               {isLoginFlow ? (
                 <>
                   <button 
@@ -923,7 +943,7 @@ const App: React.FC = () => {
                   onClick={() => setShowTermsModal(false)}
                   className="w-full bg-wood hover:bg-wood-light text-parchment-100 font-bold py-3 rounded-xl shadow-md transition"
                 >
-                  Entendi
+                  Fechar
                 </button>
               )}
            </div>
@@ -946,7 +966,7 @@ const App: React.FC = () => {
         <span className="text-xs font-bold text-wood-darker truncate max-w-[100px]">{userProfile?.name || 'Visitante'}</span>
       </button>
 
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-2 mt-8">
         <div className="relative inline-block">
           <BookOpen className="w-16 h-16 text-wood mx-auto mb-4" />
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-32 h-32 bg-yellow-400/20 blur-xl rounded-full -z-10"></div>
@@ -973,18 +993,26 @@ const App: React.FC = () => {
         </button>
       </div>
       
-      <div className="mt-auto w-full flex justify-between items-end pb-4 px-2">
-         <button 
-           onClick={() => setScreen(ScreenState.ABOUT)} 
-           className="text-wood-dark opacity-60 hover:opacity-100 hover:underline text-xs flex items-center gap-1"
-         >
-           <Info size={14} /> Sobre
-         </button>
-         <div className="text-wood/60 text-sm italic text-center">
-            <p className="mb-2">"Lâmpada para os meus pés..."</p>
-            <p className="text-[10px] uppercase tracking-wider opacity-70">JFA (Domínio Público)</p>
+      <div className="mt-auto w-full flex flex-col items-center pb-4 px-2 gap-3">
+         {/* Mandatory Links for AdSense */}
+         <div className="flex gap-6 text-[10px] font-bold uppercase tracking-widest text-wood-dark opacity-60">
+            <button onClick={() => setShowTermsModal(true)} className="hover:underline hover:opacity-100 transition">Política de Privacidade</button>
+            <button onClick={() => setShowTermsModal(true)} className="hover:underline hover:opacity-100 transition">Termos de Uso</button>
          </div>
-         <div className="w-10"></div>{/* Spacer to center the quote somewhat */}
+
+         <div className="flex justify-between items-end w-full">
+            <button 
+              onClick={() => setScreen(ScreenState.ABOUT)} 
+              className="text-wood-dark opacity-60 hover:opacity-100 hover:underline text-xs flex items-center gap-1"
+            >
+              <Info size={14} /> Sobre
+            </button>
+            <div className="text-wood/60 text-sm italic text-center">
+                <p className="mb-2">"Lâmpada para os meus pés..."</p>
+                <p className="text-[10px] uppercase tracking-wider opacity-70">JFA (Domínio Público)</p>
+            </div>
+            <div className="w-10"></div>{/* Spacer to center the quote somewhat */}
+         </div>
       </div>
     </div>
   );
